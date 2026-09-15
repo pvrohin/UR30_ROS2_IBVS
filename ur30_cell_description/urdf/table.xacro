@@ -1,0 +1,80 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Single table leg, box-shaped, hanging down from the table top link. -->
+  <xacro:macro name="table_leg" params="name lx ly leg_size top_thickness leg_length x_off y_off">
+    <link name="${name}_leg_${lx}_${ly}">
+      <visual>
+        <origin xyz="0 0 ${-leg_length/2}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${leg_size} ${leg_size} ${leg_length}"/>
+        </geometry>
+        <material name="table_leg_color">
+          <color rgba="0.2 0.2 0.2 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${-leg_length/2}" rpy="0 0 0"/>
+        <geometry>
+          <box size="${leg_size} ${leg_size} ${leg_length}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="2.0"/>
+        <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
+      </inertial>
+    </link>
+    <joint name="${name}_leg_${lx}_${ly}_joint" type="fixed">
+      <origin xyz="${lx*x_off} ${ly*y_off} ${-top_thickness/2}" rpy="0 0 0"/>
+      <parent link="${name}_top_link"/>
+      <child link="${name}_leg_${lx}_${ly}"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- Table: a flat top surface on 4 legs. "${name}_top_link" is the top
+       surface frame (origin at the CENTER of the top surface, i.e. where
+       objects placed "on" the table should be parented) -->
+  <xacro:macro name="workcell_table" params="parent name:=table
+      length:=1.2 width:=1.2 top_thickness:=0.05 top_height:=0.75
+      leg_size:=0.06 *origin">
+    <xacro:property name="leg_inset" value="0.05"/>
+    <xacro:property name="leg_length" value="${top_height - top_thickness/2}"/>
+    <xacro:property name="x_off" value="${length/2 - leg_inset}"/>
+    <xacro:property name="y_off" value="${width/2 - leg_inset}"/>
+
+    <link name="${name}_top_link">
+      <visual>
+        <geometry>
+          <box size="${length} ${width} ${top_thickness}"/>
+        </geometry>
+        <material name="table_top_color">
+          <color rgba="0.65 0.5 0.35 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <box size="${length} ${width} ${top_thickness}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="20.0"/>
+        <inertia ixx="1.0" ixy="0" ixz="0" iyy="1.0" iyz="0" izz="1.0"/>
+      </inertial>
+    </link>
+
+    <joint name="${name}_mount_joint" type="fixed">
+      <xacro:insert_block name="origin"/>
+      <parent link="${parent}"/>
+      <child link="${name}_top_link"/>
+    </joint>
+
+    <xacro:table_leg name="${name}" lx="1" ly="1" leg_size="${leg_size}" top_thickness="${top_thickness}" leg_length="${leg_length}" x_off="${x_off}" y_off="${y_off}"/>
+    <xacro:table_leg name="${name}" lx="1" ly="-1" leg_size="${leg_size}" top_thickness="${top_thickness}" leg_length="${leg_length}" x_off="${x_off}" y_off="${y_off}"/>
+    <xacro:table_leg name="${name}" lx="-1" ly="1" leg_size="${leg_size}" top_thickness="${top_thickness}" leg_length="${leg_length}" x_off="${x_off}" y_off="${y_off}"/>
+    <xacro:table_leg name="${name}" lx="-1" ly="-1" leg_size="${leg_size}" top_thickness="${top_thickness}" leg_length="${leg_length}" x_off="${x_off}" y_off="${y_off}"/>
+
+    <gazebo reference="${name}_top_link">
+      <material>Gazebo/Wood</material>
+    </gazebo>
+  </xacro:macro>
+</robot>

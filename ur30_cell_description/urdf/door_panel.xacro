@@ -1,0 +1,128 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- One corner fixture clamp, parented directly to the panel link so its
+       offset is exact regardless of where the panel itself is mounted. -->
+  <xacro:macro name="fixture_clamp" params="name cx cy panel_length panel_width panel_thickness">
+    <link name="${name}_clamp_${cx}_${cy}">
+      <visual>
+        <geometry>
+          <box size="0.04 0.04 0.03"/>
+        </geometry>
+        <material name="clamp_color">
+          <color rgba="0.8 0.1 0.1 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <box size="0.04 0.04 0.03"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="0.05"/>
+        <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/>
+      </inertial>
+    </link>
+    <joint name="${name}_clamp_${cx}_${cy}_joint" type="fixed">
+      <origin xyz="${cx*(panel_length/2 - 0.03)} ${cy*(panel_width/2 - 0.03)} ${-panel_thickness/2 - 0.015}" rpy="0 0 0"/>
+      <parent link="${name}_link"/>
+      <child link="${name}_clamp_${cx}_${cy}"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- Simplified automotive door panel: a flat slab plus a couple of
+       primitive surface details (armrest, speaker grille) for visual
+       interest, fixtured to "parent" (the table top) at its 4 corners via
+       clamp stand-ins. No external mesh dependency. -->
+  <xacro:macro name="door_panel" params="parent
+      panel_length:=0.9 panel_width:=0.55 panel_thickness:=0.03
+      name:=door_panel *origin">
+
+    <link name="${name}_link">
+      <visual>
+        <geometry>
+          <box size="${panel_length} ${panel_width} ${panel_thickness}"/>
+        </geometry>
+        <material name="door_panel_color">
+          <color rgba="0.15 0.15 0.17 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <box size="${panel_length} ${panel_width} ${panel_thickness}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="4.0"/>
+        <inertia ixx="0.05" ixy="0" ixz="0" iyy="0.05" iyz="0" izz="0.05"/>
+      </inertial>
+    </link>
+    <joint name="${name}_mount_joint" type="fixed">
+      <xacro:insert_block name="origin"/>
+      <parent link="${parent}"/>
+      <child link="${name}_link"/>
+    </joint>
+
+    <!-- armrest bulge -->
+    <link name="${name}_armrest_link">
+      <visual>
+        <geometry>
+          <box size="0.35 0.12 0.03"/>
+        </geometry>
+        <material name="armrest_color">
+          <color rgba="0.1 0.1 0.1 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <box size="0.35 0.12 0.03"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="0.3"/>
+        <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
+      </inertial>
+    </link>
+    <joint name="${name}_armrest_joint" type="fixed">
+      <origin xyz="0 -0.1 ${panel_thickness/2 + 0.015}" rpy="0 0 0"/>
+      <parent link="${name}_link"/>
+      <child link="${name}_armrest_link"/>
+    </joint>
+
+    <!-- speaker grille -->
+    <link name="${name}_speaker_link">
+      <visual>
+        <geometry>
+          <box size="0.12 0.12 0.01"/>
+        </geometry>
+        <material name="speaker_color">
+          <color rgba="0.05 0.05 0.05 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <box size="0.12 0.12 0.01"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="0.1"/>
+        <inertia ixx="0.0005" ixy="0" ixz="0" iyy="0.0005" iyz="0" izz="0.0005"/>
+      </inertial>
+    </link>
+    <joint name="${name}_speaker_joint" type="fixed">
+      <origin xyz="0.25 0.15 ${panel_thickness/2 + 0.005}" rpy="0 0 0"/>
+      <parent link="${name}_link"/>
+      <child link="${name}_speaker_link"/>
+    </joint>
+
+    <!-- 4 corner fixture clamps, exactly at the panel's corners -->
+    <xacro:fixture_clamp name="${name}" cx="1" cy="1" panel_length="${panel_length}" panel_width="${panel_width}" panel_thickness="${panel_thickness}"/>
+    <xacro:fixture_clamp name="${name}" cx="1" cy="-1" panel_length="${panel_length}" panel_width="${panel_width}" panel_thickness="${panel_thickness}"/>
+    <xacro:fixture_clamp name="${name}" cx="-1" cy="1" panel_length="${panel_length}" panel_width="${panel_width}" panel_thickness="${panel_thickness}"/>
+    <xacro:fixture_clamp name="${name}" cx="-1" cy="-1" panel_length="${panel_length}" panel_width="${panel_width}" panel_thickness="${panel_thickness}"/>
+
+    <gazebo reference="${name}_link">
+      <material>Gazebo/DarkGrey</material>
+    </gazebo>
+  </xacro:macro>
+</robot>
