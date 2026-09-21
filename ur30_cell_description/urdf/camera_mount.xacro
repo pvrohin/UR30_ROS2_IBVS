@@ -57,8 +57,23 @@
             </clip>
           </depth_camera>
         </camera>
-        <frame_id>camera_color_optical_frame</frame_id>
       </sensor>
     </gazebo>
+
+    <!-- gz-sim has no SDF tag to set a sensor's published frame_id; it
+         always uses "<model>/<lumped_link>/<sensor_name>". Because every
+         joint from wrist_3_link down to camera_color_optical_frame is
+         fixed, gz-sim's URDF to SDF conversion lumps this whole chain onto
+         wrist_3_link, so the RGBD sensor's messages carry frame_id
+         "$(arg name)/$(arg tf_prefix)wrist_3_link/gemini_335_Lg_rgbd", a
+         frame robot_state_publisher never otherwise publishes. Add it here,
+         rigidly fixed to camera_color_optical_frame (same physical pose the
+         lumped sensor actually renders from), so TF/RViz can resolve it. -->
+    <link name="$(arg name)/$(arg tf_prefix)wrist_3_link/gemini_335_Lg_rgbd"/>
+    <joint name="camera_color_optical_frame_to_gz_sensor_frame" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <parent link="camera_color_optical_frame"/>
+      <child link="$(arg name)/$(arg tf_prefix)wrist_3_link/gemini_335_Lg_rgbd"/>
+    </joint>
   </xacro:macro>
 </robot>
