@@ -1,0 +1,73 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="$(arg name)">
+  <xacro:arg name="name" default="ur30_cell"/>
+  <xacro:arg name="ur_type" default="ur30"/>
+  <xacro:arg name="tf_prefix" default=""/>
+  <xacro:arg name="joint_limit_params" default="$(find ur_description)/config/$(arg ur_type)/joint_limits.yaml"/>
+  <xacro:arg name="kinematics_params" default="$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml"/>
+  <xacro:arg name="physical_params" default="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"/>
+  <xacro:arg name="visual_params" default="$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml"/>
+  <xacro:arg name="transmission_hw_interface" default=""/>
+  <xacro:arg name="safety_limits" default="true"/>
+  <xacro:arg name="safety_pos_margin" default="0.15"/>
+  <xacro:arg name="safety_k_position" default="20"/>
+  <xacro:arg name="simulation_controllers" default=""/>
+  <xacro:arg name="ros_namespace" default=""/>
+
+  <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
+  <xacro:include filename="$(find ur_simulation_gz)/urdf/ur_gz.ros2_control.xacro"/>
+  <xacro:include filename="$(find ur30_cell_description)/urdf/pedestal.xacro"/>
+  <xacro:include filename="$(find ur30_cell_description)/urdf/table.xacro"/>
+  <xacro:include filename="$(find ur30_cell_description)/urdf/door_panel.xacro"/>
+  <xacro:include filename="$(find ur30_cell_description)/urdf/camera_mount.xacro"/>
+
+  <link name="world"/>
+
+  <!-- Pedestal at the world origin; the UR30 base mounts on its top frame. -->
+  <xacro:pedestal parent="world" name="pedestal" height="0.5" radius="0.15">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:pedestal>
+
+  <xacro:ur_robot
+    name="$(arg name)"
+    tf_prefix="$(arg tf_prefix)"
+    parent="pedestal_top_link"
+    joint_limits_parameters_file="$(arg joint_limit_params)"
+    kinematics_parameters_file="$(arg kinematics_params)"
+    physical_parameters_file="$(arg physical_params)"
+    visual_parameters_file="$(arg visual_params)"
+    safety_limits="$(arg safety_limits)"
+    safety_pos_margin="$(arg safety_pos_margin)"
+    safety_k_position="$(arg safety_k_position)"
+    force_abs_paths="true">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:ur_robot>
+
+  <!-- Table in front of the pedestal, within UR30's reach. -->
+  <xacro:workcell_table parent="world" name="table" length="1.2" width="1.2" top_height="0.75">
+    <origin xyz="0.9 0 0.75" rpy="0 0 0"/>
+  </xacro:workcell_table>
+
+  <!-- Door panel fixtured on the table top, slightly toward the arm. -->
+  <xacro:door_panel parent="table_top_link" name="door_panel"
+      panel_length="0.9" panel_width="0.55" panel_thickness="0.03">
+    <origin xyz="-0.1 0 0.04" rpy="0 0 0"/>
+  </xacro:door_panel>
+
+  <!-- Eye-in-hand Orbbec Gemini 335Lg on the UR30 flange. -->
+  <xacro:eye_in_hand_camera parent="$(arg tf_prefix)tool0" camera_topic="camera"/>
+
+  <gazebo>
+    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <parameters>$(arg simulation_controllers)</parameters>
+      <ros>
+        <namespace>$(arg ros_namespace)</namespace>
+      </ros>
+    </plugin>
+  </gazebo>
+
+  <xacro:ur_ros2_control
+    name="$(arg name)"
+    tf_prefix="$(arg tf_prefix)"
+    transmission_hw_interface="$(arg transmission_hw_interface)"/>
+</robot>

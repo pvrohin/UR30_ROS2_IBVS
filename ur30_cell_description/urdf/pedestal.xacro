@@ -1,0 +1,48 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Simple cylindrical pedestal/stand. Exposes "${name}_top_link" as the
+       mounting frame for whatever sits on top (e.g. xacro:ur_robot's parent). -->
+  <xacro:macro name="pedestal" params="parent name:=pedestal height:=0.5 radius:=0.15 *origin">
+    <link name="${name}_link">
+      <visual>
+        <origin xyz="0 0 ${height/2}" rpy="0 0 0"/>
+        <geometry>
+          <cylinder radius="${radius}" length="${height}"/>
+        </geometry>
+        <material name="pedestal_grey">
+          <color rgba="0.55 0.55 0.58 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${height/2}" rpy="0 0 0"/>
+        <geometry>
+          <cylinder radius="${radius}" length="${height}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <origin xyz="0 0 ${height/2}" rpy="0 0 0"/>
+        <mass value="25.0"/>
+        <inertia ixx="1.0" ixy="0" ixz="0" iyy="1.0" iyz="0" izz="0.3"/>
+      </inertial>
+    </link>
+
+    <joint name="${name}_mount_joint" type="fixed">
+      <xacro:insert_block name="origin"/>
+      <parent link="${parent}"/>
+      <child link="${name}_link"/>
+    </joint>
+
+    <!-- Zero-mass mounting frame at the top of the pedestal. -->
+    <link name="${name}_top_link"/>
+    <joint name="${name}_top_joint" type="fixed">
+      <origin xyz="0 0 ${height}" rpy="0 0 0"/>
+      <parent link="${name}_link"/>
+      <child link="${name}_top_link"/>
+    </joint>
+
+    <gazebo reference="${name}_link">
+      <material>Gazebo/Grey</material>
+    </gazebo>
+  </xacro:macro>
+</robot>

@@ -1,0 +1,79 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Orbbec Gemini 335Lg link/joint tree (camera_link, camera_depth_frame,
+       camera_color_frame, camera_color_optical_frame, IR frames, IMU frame).
+       Not a macro upstream: xacro:include pulls its link/joint tags in
+       directly, so this file (and therefore this whole package) can only be
+       used with a single camera instance. -->
+  <xacro:include filename="$(find orbbec_description)/urdf/gemini_335_Lg.urdf.xacro"/>
+
+  <!-- Mounts the camera eye-in-hand on "parent" (normally tool0) and adds
+       the Gazebo RGBD sensor plugin on the color optical frame.
+       mount_rpy default "0 -1.5708 0" rotates camera_link's +X (viewing
+       axis) onto parent's +Z (tool approach direction), so the camera looks
+       straight out along the tool. -->
+  <xacro:macro name="eye_in_hand_camera" params="
+      parent:=tool0
+      camera_topic:=camera
+      standoff_z:=0.01
+      mount_rpy:='0 -1.5708 0'
+      update_rate:=30
+      image_width:=1280
+      image_height:=720
+      horizontal_fov:=1.5708
+      clip_near:=0.1
+      clip_far:=10.0
+      depth_clip_near:=0.2
+      depth_clip_far:=10.0">
+
+    <joint name="${parent}_to_camera_link" type="fixed">
+      <origin xyz="0 0 ${standoff_z}" rpy="${mount_rpy}"/>
+      <parent link="${parent}"/>
+      <child link="camera_link"/>
+    </joint>
+
+    <gazebo reference="camera_color_optical_frame">
+      <sensor name="gemini_335_Lg_rgbd" type="rgbd_camera">
+        <always_on>true</always_on>
+        <update_rate>${update_rate}</update_rate>
+        <visualize>true</visualize>
+        <topic>${camera_topic}</topic>
+        <camera name="gemini_335_Lg">
+          <horizontal_fov>${horizontal_fov}</horizontal_fov>
+          <image>
+            <width>${image_width}</width>
+            <height>${image_height}</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>${clip_near}</near>
+            <far>${clip_far}</far>
+          </clip>
+          <depth_camera>
+            <clip>
+              <near>${depth_clip_near}</near>
+              <far>${depth_clip_far}</far>
+            </clip>
+          </depth_camera>
+        </camera>
+      </sensor>
+    </gazebo>
+
+    <!-- gz-sim has no SDF tag to set a sensor's published frame_id; it
+         always uses "<model>/<lumped_link>/<sensor_name>". Because every
+         joint from wrist_3_link down to camera_color_optical_frame is
+         fixed, gz-sim's URDF to SDF conversion lumps this whole chain onto
+         wrist_3_link, so the RGBD sensor's messages carry frame_id
+         "$(arg name)/$(arg tf_prefix)wrist_3_link/gemini_335_Lg_rgbd", a
+         frame robot_state_publisher never otherwise publishes. Add it here,
+         rigidly fixed to camera_color_optical_frame (same physical pose the
+         lumped sensor actually renders from), so TF/RViz can resolve it. -->
+    <link name="$(arg name)/$(arg tf_prefix)wrist_3_link/gemini_335_Lg_rgbd"/>
+    <joint name="camera_color_optical_frame_to_gz_sensor_frame" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <parent link="camera_color_optical_frame"/>
+      <child link="$(arg name)/$(arg tf_prefix)wrist_3_link/gemini_335_Lg_rgbd"/>
+    </joint>
+  </xacro:macro>
+</robot>
