@@ -40,9 +40,5 @@
       <parent link="${name}_link"/>
       <child link="${name}_top_link"/>
     </joint>
-
-    <gazebo reference="${name}_link">
-      <material>Gazebo/Grey</material>
-    </gazebo>
   </xacro:macro>
 </robot>

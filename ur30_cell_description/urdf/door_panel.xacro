@@ -120,9 +120,5 @@
     <xacro:fixture_clamp name="${name}" cx="1" cy="-1" panel_length="${panel_length}" panel_width="${panel_width}" panel_thickness="${panel_thickness}"/>
     <xacro:fixture_clamp name="${name}" cx="-1" cy="1" panel_length="${panel_length}" panel_width="${panel_width}" panel_thickness="${panel_thickness}"/>
     <xacro:fixture_clamp name="${name}" cx="-1" cy="-1" panel_length="${panel_length}" panel_width="${panel_width}" panel_thickness="${panel_thickness}"/>
-
-    <gazebo reference="${name}_link">
-      <material>Gazebo/DarkGrey</material>
-    </gazebo>
   </xacro:macro>
 </robot>
