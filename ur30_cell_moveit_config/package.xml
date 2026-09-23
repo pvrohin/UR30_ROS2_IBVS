@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>ur30_cell_moveit_config</name>
+  <version>0.1.0</version>
+  <description>Minimal MoveIt Servo configuration (SRDF, kinematics, servo params) for the UR30 workcell. No move_group or planning stack.</description>
+  <maintainer email="pvrohin@gmail.com">pvrohin</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>moveit_servo</exec_depend>
+  <exec_depend>moveit_configs_utils</exec_depend>
+  <exec_depend>ur_moveit_config</exec_depend>
+  <exec_depend>ur30_cell_description</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>xacro</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
