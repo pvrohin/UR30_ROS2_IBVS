@@ -23,13 +23,22 @@ ibvs_state_machine:
     panel_length: 0.9
     panel_width: 0.55
 
-    # Initial guesses, NOT yet tuned against real rendered frames.
-    dark_threshold: 90  # HSV value (0-255) below which a pixel counts as panel
+    # Brightest-channel value below which a pixel counts as panel. Measured on
+    # a real frame at the survey pose: panel 107, armrest 83, speaker 59,
+    # table 197, so 150 sits midway between panel and table. Re-measure if the
+    # scene colours or lighting change. The other thresholds are unchanged
+    # initial guesses that the same frame satisfied (area fraction 0.61).
+    dark_threshold: 150
     min_area_fraction: 0.35  # of image area; expected ~0.61 at the 0.6 m survey
     max_area_fraction: 0.85
-    aspect_ratio: 1.636  # panel_length / panel_width
-    aspect_tolerance: 0.2
+    min_rectangularity: 0.85  # blob area / its min-area rectangle, rejects merged blobs
+    aspect_tolerance: 0.2  # relative error on panel_length / panel_width
     max_reprojection_px: 3.0
+    # Direction the panel x axis should point in the image (0 = image right,
+    # clockwise positive). A rectangle looks the same after a 180 degree turn,
+    # so this alone decides which long edge is +y. At the survey pose the panel
+    # is unrotated in the world, so its x axis points along image +x.
+    expected_x_axis_angle_deg: 0.0
     consecutive_detections: 10  # debounce before committing to APPROACH
 
     # ---- stage 2: APPROACH (look-then-move, TF based) --------------------
