@@ -1,0 +1,61 @@
+ibvs_state_machine:
+  ros__parameters:
+    # ---- interfaces -------------------------------------------------------
+    image_topic: /camera/color/image_raw
+    camera_info_topic: /camera/color/camera_info
+    twist_topic: /servo_node/delta_twist_cmds
+    world_frame: world
+    command_frame: tool0
+    camera_frame: camera_color_optical_frame
+    jtc_action: /joint_trajectory_controller/follow_joint_trajectory
+    position_controller: joint_trajectory_controller
+    velocity_controller: forward_velocity_controller
+    control_rate_hz: 50.0  # Servo drops twists older than 0.1 s, keep well above 10 Hz
+
+    # ---- stage 1: SEARCH --------------------------------------------------
+    # Verified in sim: camera optical frame at world (0.8, 0, 1.405), looking
+    # straight down, image +x along world +X, Jacobian condition number ~10.5.
+    survey_joint_positions: [-0.2619, -1.3611, 0.9311, -1.1408, -1.5708, -0.2619]
+    survey_duration_sec: 6.0
+
+    # Real panel outline (door_panel.xacro); PnP object frame is the centre of
+    # the top face, x along the length, y along the width, z = 0 on the face.
+    panel_length: 0.9
+    panel_width: 0.55
+
+    # Initial guesses, NOT yet tuned against real rendered frames.
+    dark_threshold: 90  # HSV value (0-255) below which a pixel counts as panel
+    min_area_fraction: 0.35  # of image area; expected ~0.61 at the 0.6 m survey
+    max_area_fraction: 0.85
+    aspect_ratio: 1.636  # panel_length / panel_width
+    aspect_tolerance: 0.2
+    max_reprojection_px: 3.0
+    consecutive_detections: 10  # debounce before committing to APPROACH
+
+    # ---- stage 2: APPROACH (look-then-move, TF based) --------------------
+    # Which long edge to follow: +1 -> the edge at +panel_width/2 in the panel
+    # frame, -1 -> the one at -panel_width/2.
+    follow_edge_sign: 1.0
+    # Camera height above the panel top face at the end of APPROACH. At 0.2 m
+    # the image covers only ~0.40 x 0.23 m, so exactly one long edge is visible.
+    servo_standoff: 0.20
+    approach_kp: 1.0  # [1/s]
+    approach_max_speed: 0.05  # [m/s]
+    approach_max_rot_speed: 0.1  # [rad/s]
+    approach_tolerance: 0.01  # [m] position error at which SERVO starts
+
+    # ---- stage 3: SERVO (vpMeLine + vpFeatureLine IBVS) ------------------
+    servo_lambda: 0.6
+    # Desired line in normalised image coordinates: horizontal (edge along the
+    # image x axis) and passing through the image centre.
+    desired_rho: 0.0
+    desired_theta: 1.5708
+    standoff_kp: 1.0  # [1/s] holds servo_standoff; a single line cannot constrain it
+    standoff_max_speed: 0.03  # [m/s]
+    slide_speed: 0.0  # [m/s] along the edge; 0 holds position. Mind the 0.9 m edge length.
+    converged_threshold: 0.005  # feature error norm reported as "converged"
+
+    # Moving-edges tracker settings (vpMe); initial guesses.
+    me_range: 10
+    me_sample_step: 5.0
+    me_threshold: 20.0
