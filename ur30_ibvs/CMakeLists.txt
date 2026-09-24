@@ -8,7 +8,6 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
-find_package(image_transport REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
@@ -49,7 +48,21 @@ if(BUILD_TESTING)
   target_link_libraries(test_panel_geometry ur30_ibvs_core)
 endif()
 
-# Executable target is added here once the state machine is implemented.
+add_executable(ibvs_node src/ibvs_node_main.cpp src/ibvs_state_machine.cpp)
+target_link_libraries(ibvs_node ur30_ibvs_core)
+ament_target_dependencies(ibvs_node
+  rclcpp
+  rclcpp_action
+  cv_bridge
+  sensor_msgs
+  geometry_msgs
+  std_msgs
+  control_msgs
+  controller_manager_msgs
+  moveit_msgs
+  tf2_ros)
+
+install(TARGETS ibvs_node DESTINATION lib/${PROJECT_NAME})
 
 install(
   DIRECTORY config launch

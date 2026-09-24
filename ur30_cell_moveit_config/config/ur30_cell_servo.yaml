@@ -30,9 +30,16 @@ publish_joint_positions: false
 publish_joint_velocities: true
 publish_joint_accelerations: false
 
-## Smoothing (needs joint acceleration limits from joint_limits.yaml, and the
-## update_period / planning_group_name params passed by the launch file)
-use_smoothing: true
+## Smoothing is OFF. With the AccelerationLimitedPlugin on, Servo's output collapsed
+## to zero about 0.25 s after a twist started, although the IK was solving correctly
+## every step and status stayed "No warnings". With it off, the same twist gave a
+## steady command and steady arm motion (measured in the Gazebo cell, real-time
+## factor ~0.8). The cause inside the plugin was not isolated.
+## TODO: re-test on the real robot (real-time factor 1) and re-enable if wanted; the
+## filter needs joint acceleration limits from joint_limits.yaml and the
+## update_period / planning_group_name params passed by the launch file. Until then
+## the twist rate is the caller's job: IbvsStateMachine limits its own speeds.
+use_smoothing: false
 smoothing_filter_plugin_name: "online_signal_smoothing::AccelerationLimitedPlugin"
 
 ## No move_group runs in this setup, so Servo owns the planning scene

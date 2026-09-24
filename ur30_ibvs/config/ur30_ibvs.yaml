@@ -11,6 +11,11 @@ ibvs_state_machine:
     position_controller: joint_trajectory_controller
     velocity_controller: forward_velocity_controller
     control_rate_hz: 50.0  # Servo drops twists older than 0.1 s, keep well above 10 Hz
+    # A SERVO command older than this (no new image) is replaced by a zero twist.
+    stale_command_sec: 0.25
+    joint_names:
+      [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint,
+        wrist_3_joint]
 
     # ---- stage 1: SEARCH --------------------------------------------------
     # Verified in sim: camera optical frame at world (0.8, 0, 1.405), looking
@@ -22,6 +27,10 @@ ibvs_state_machine:
     # the top face, x along the length, y along the width, z = 0 on the face.
     panel_length: 0.9
     panel_width: 0.55
+    # World z of the panel's top face: table top 0.75 + panel offset 0.04 + half
+    # the 0.03 thickness (ur30_cell.xacro, door_panel.xacro). The corners are
+    # back-projected onto this plane, so it must match the cell.
+    panel_top_height: 0.805
 
     # Brightest-channel value below which a pixel counts as panel. Measured on
     # a real frame at the survey pose: panel 107, armrest 83, speaker 59,
@@ -40,6 +49,11 @@ ibvs_state_machine:
     # is unrotated in the world, so its x axis points along image +x.
     expected_x_axis_angle_deg: 0.0
     consecutive_detections: 10  # debounce before committing to APPROACH
+    search_timeout_sec: 30.0  # give up (FAILED) if the panel is not found in this time
+    # A detection is rejected unless the back-projected panel is this close to the
+    # known size, and the PnP depth agrees with the camera height from TF.
+    size_tolerance_m: 0.03
+    depth_consistency_m: 0.03
 
     # ---- stage 2: APPROACH (look-then-move, TF based) --------------------
     # Which long edge to follow: +1 -> the edge at +panel_width/2 in the panel
@@ -52,6 +66,8 @@ ibvs_state_machine:
     approach_max_speed: 0.05  # [m/s]
     approach_max_rot_speed: 0.1  # [rad/s]
     approach_tolerance: 0.01  # [m] position error at which SERVO starts
+    approach_rot_tolerance: 0.03  # [rad] orientation error at which SERVO starts
+    approach_timeout_sec: 90.0  # FAILED if the target is not reached in this time
 
     # ---- stage 3: SERVO (vpMeLine + vpFeatureLine IBVS) ------------------
     servo_lambda: 0.6
@@ -66,7 +82,13 @@ ibvs_state_machine:
     standoff_kp: 1.0  # [1/s] holds servo_standoff; a single line cannot constrain it
     standoff_max_speed: 0.03  # [m/s]
     slide_speed: 0.0  # [m/s] along the edge; 0 holds position. Mind the 0.9 m edge length.
-    converged_threshold: 0.005  # feature error norm reported as "converged"
+    # Feature error norm reported as "converged". MoveIt Servo ignores twists below
+    # ~0.5-1 mm/s (measured: 1 mm/s moves the arm, 0.5 mm/s does not), so the loop
+    # stalls with rho off by up to ~0.008 (about 1 mm at the 0.2 m standoff). 0.01
+    # is just outside that; the first end-to-end run settled within ~1 mm.
+    converged_threshold: 0.01
+    # Consecutive failures to (re-)seed or keep the edge before giving up (FAILED).
+    reseed_attempts: 3
 
     # Moving-edges tracker (vpMe, NORMALIZED_THRESHOLD). Initial guesses, but
     # they tracked a real close-up frame with 217 points.
