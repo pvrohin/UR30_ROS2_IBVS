@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include <opencv2/core.hpp>
 
 #include <visp3/core/vpCameraParameters.h>
@@ -47,6 +49,9 @@ public:
 
   bool isTracking() const {return tracking_;}
   int trackedPoints() const;
+
+  // Pixels (x, y) of the moving-edge points that are currently tracked, for drawing.
+  std::vector<cv::Point2f> sitePixels() const;
 
   // Line feature (rho, theta) in normalised image coordinates for vpServo.
   void feature(

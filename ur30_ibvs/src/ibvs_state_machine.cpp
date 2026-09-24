@@ -6,6 +6,7 @@
 #include <cstdio>
 
 #include <cv_bridge/cv_bridge.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include <visp3/core/vpCameraParameters.h>
 #include <visp3/visual_features/vpFeatureLine.h>
@@ -23,6 +24,41 @@ std::string seconds(double s)
   char text[32];
   std::snprintf(text, sizeof(text), "%.1f s", s);
   return text;
+}
+
+template<typename... Args>
+std::string format(const char * fmt, Args... args)
+{
+  char text[160];
+  std::snprintf(text, sizeof(text), fmt, args...);
+  return text;
+}
+
+const cv::Scalar kGreen(0, 220, 0);
+const cv::Scalar kRed(0, 0, 255);
+const cv::Scalar kCyan(255, 255, 0);
+const cv::Scalar kYellow(0, 220, 255);
+
+void label(cv::Mat & image, const std::string & text, int row)
+{
+  const cv::Point at(20, 40 + 34 * row);
+  cv::putText(image, text, at, cv::FONT_HERSHEY_SIMPLEX, 0.9, cv::Scalar(0, 0, 0), 4, cv::LINE_AA);
+  cv::putText(
+    image, text, at, cv::FONT_HERSHEY_SIMPLEX, 0.9, cv::Scalar(255, 255, 255), 2, cv::LINE_AA);
+}
+
+// Draw ViSP's line  i cos(theta) + j sin(theta) = rho  (i = row, j = column) across the image.
+void drawPixelLine(cv::Mat & image, double rho, double theta, const cv::Scalar & color)
+{
+  const double c = std::cos(theta);
+  const double s = std::sin(theta);
+  const double w = image.cols;
+  const auto at = [](double x, double y) {return cv::Point(cvRound(x), cvRound(y));};
+  if (std::abs(c) > 1e-6) {
+    cv::line(image, at(0.0, rho / c), at(w, (rho - w * s) / c), color, 2, cv::LINE_AA);
+  } else {
+    cv::line(image, at(rho / s, 0.0), at(rho / s, image.rows), color, 2, cv::LINE_AA);
+  }
 }
 }  // namespace
 
@@ -132,6 +168,7 @@ IbvsStateMachine::IbvsStateMachine()
     [this](const sensor_msgs::msg::Image::ConstSharedPtr msg) {onImage(msg);});
   twist_pub_ = create_publisher<geometry_msgs::msg::TwistStamped>(params_.twist_topic, 10);
   state_pub_ = create_publisher<std_msgs::msg::String>("~/state", rclcpp::QoS(1).transient_local());
+  debug_pub_ = create_publisher<sensor_msgs::msg::Image>("~/debug_image", 1);
 
   jtc_client_ = rclcpp_action::create_client<FollowJointTrajectory>(this, params_.jtc_action);
   switch_client_ = create_client<SwitchController>("/controller_manager/switch_controller");
@@ -152,6 +189,7 @@ void IbvsStateMachine::onCameraInfo(const sensor_msgs::msg::CameraInfo::ConstSha
 void IbvsStateMachine::onImage(const sensor_msgs::msg::Image::ConstSharedPtr & msg)
 {
   supervisor_.onImage(now().seconds());
+  image_header_ = msg->header;
   if (!K_ || (state_ != State::SEARCH && state_ != State::SERVO)) {
     return;
   }
@@ -272,6 +310,7 @@ void IbvsStateMachine::handleSearch(const cv::Mat & bgr)
     return;
   }
   const auto detection = detector_->detect(bgr, *K_);
+  publishSearchDebug(bgr, detection ? &*detection : nullptr);
   if (!detection) {
     good_detections_ = 0;
     return;
@@ -418,6 +457,7 @@ void IbvsStateMachine::handleServo(const cv::Mat & bgr)
         "could not find the edge (missing for %.1f s, giving up after %.1f s)",
         supervisor_.secondsEdgeMissing(t), params_.edge_lost_timeout_sec);
     }
+    publishServoDebug(bgr, *distance, nullptr);
     return;
   }
 
@@ -427,6 +467,7 @@ void IbvsStateMachine::handleServo(const cv::Mat & bgr)
     converged_reported_ = false;
     supervisor_.onEdgeMissing(t);
     RCLCPP_WARN(get_logger(), "lost the edge; re-seeding from the panel pose");
+    publishServoDebug(bgr, *distance, nullptr);
     return;
   }
   supervisor_.onEdgeLocked();
@@ -443,6 +484,7 @@ void IbvsStateMachine::handleServo(const cv::Mat & bgr)
     params_.standoff_kp * standoff_error, -params_.standoff_max_speed, params_.standoff_max_speed);
   servo_command_ = command;
   servo_command_stamp_ = now();
+  publishServoDebug(bgr, *distance, &command);
 
   const bool converged = controller_->errorNorm() < params_.converged_threshold &&
     std::abs(standoff_error) < 0.005;
@@ -452,6 +494,78 @@ void IbvsStateMachine::handleServo(const cv::Mat & bgr)
       *distance);
   }
   converged_reported_ = converged;
+}
+
+bool IbvsStateMachine::debugWanted() const {return debug_pub_->get_subscription_count() > 0;}
+
+void IbvsStateMachine::publishDebugImage(const cv::Mat & annotated)
+{
+  debug_pub_->publish(*cv_bridge::CvImage(image_header_, "bgr8", annotated).toImageMsg());
+}
+
+void IbvsStateMachine::publishSearchDebug(const cv::Mat & bgr, const PanelDetection * detection)
+{
+  if (!debugWanted()) {
+    return;
+  }
+  cv::Mat image = bgr.clone();
+  if (detection) {
+    std::vector<cv::Point> outline;
+    for (const auto & c : detection->corners_px) {
+      outline.emplace_back(cvRound(c.x), cvRound(c.y));
+    }
+    cv::polylines(image, outline, true, kGreen, 3, cv::LINE_AA);
+    for (size_t i = 0; i < outline.size(); ++i) {
+      cv::circle(image, outline[i], 9, kYellow, -1, cv::LINE_AA);
+      cv::putText(
+        image, std::to_string(i), outline[i] + cv::Point(12, -12), cv::FONT_HERSHEY_SIMPLEX, 0.9,
+        kYellow, 2, cv::LINE_AA);
+    }
+    label(image, format("SEARCH: panel found (%d of %d frames)", good_detections_,
+      params_.consecutive_detections), 0);
+  } else {
+    label(image, "SEARCH: panel not found", 0);
+  }
+  label(image, "green: detected panel outline, corners 0-3", 1);
+  publishDebugImage(image);
+}
+
+void IbvsStateMachine::publishServoDebug(
+  const cv::Mat & bgr, double distance, const std::array<double, 6> * command)
+{
+  if (!debugWanted()) {
+    return;
+  }
+  cv::Mat image = bgr.clone();
+  const double t = now().seconds();
+  if (tracker_active_) {
+    // The desired line is horizontal at normalised y = desired_rho / sin(theta*), and
+    // sin(theta*) is the polarity sign (+1 dark below the edge, -1 above). It is drawn
+    // thick and underneath, and the tracked line thin on top, so both stay visible when
+    // they coincide at convergence.
+    const vpCameraParameters cam((*K_)(0, 0), (*K_)(1, 1), (*K_)(0, 2), (*K_)(1, 2));
+    vpFeatureLine s;
+    tracker_->feature(cam, s);
+    const double polarity = s.getTheta() >= 0.0 ? 1.0 : -1.0;
+    const double row = (*K_)(1, 2) + (*K_)(1, 1) * params_.desired_rho / polarity;
+    cv::line(
+      image, cv::Point(0, cvRound(row)), cv::Point(image.cols, cvRound(row)), kCyan, 7, cv::LINE_AA);
+    for (const auto & p : tracker_->sitePixels()) {
+      cv::circle(image, cv::Point(cvRound(p.x), cvRound(p.y)), 3, kGreen, -1, cv::LINE_AA);
+    }
+    const cv::Vec2d rho_theta = tracker_->rhoTheta();
+    drawPixelLine(image, rho_theta[0], rho_theta[1], kRed);
+    label(image, format("SERVO: edge locked, %d points", tracker_->trackedPoints()), 0);
+  } else {
+    label(image, format("SERVO: edge missing for %.1f s", supervisor_.secondsEdgeMissing(t)), 0);
+  }
+  label(image, format("standoff %.3f m (target %.3f m)", distance, params_.servo_standoff), 1);
+  if (command) {
+    label(image, format("vy %+.4f m/s  wz %+.4f rad/s  error %.4f", (*command)[1], (*command)[5],
+      controller_->errorNorm()), 2);
+  }
+  label(image, "red: tracked edge   cyan: desired edge   green: moving-edge points", 3);
+  publishDebugImage(image);
 }
 
 void IbvsStateMachine::transitionTo(State next)

@@ -15,6 +15,7 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <std_msgs/msg/header.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -94,6 +95,15 @@ private:
   void handleServo(const cv::Mat & bgr);
   bool seedEdgeTracker(const cv::Mat & bgr, const cv::Matx44d & world_T_cam);
 
+  // Annotated copies of the camera image on ~/debug_image, built only while someone
+  // is subscribed: the detected panel outline while searching; the tracked edge
+  // points, the tracked line and the desired line while servoing.
+  bool debugWanted() const;
+  void publishDebugImage(const cv::Mat & annotated);
+  void publishSearchDebug(const cv::Mat & bgr, const PanelDetection * detection);
+  void publishServoDebug(
+    const cv::Mat & bgr, double distance, const std::array<double, 6> * command);
+
   void transitionTo(State next);
   void fail(const std::string & reason);
   void publishTwist(const std::array<double, 6> & twist_camera_frame);
@@ -105,6 +115,7 @@ private:
   const Params params_;
   State state_ = State::WAIT_READY;
   ServoSupervisor supervisor_;
+  std_msgs::msg::Header image_header_;  // header of the image being processed
 
   std::unique_ptr<PanelDetector> detector_;
   std::unique_ptr<EdgeTracker> tracker_;
@@ -117,6 +128,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr info_sub_;
   rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr twist_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr state_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr debug_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp_action::Client<FollowJointTrajectory>::SharedPtr jtc_client_;
   rclcpp::Client<SwitchController>::SharedPtr switch_client_;

@@ -67,6 +67,36 @@ TEST(EdgeTracker, FindsHorizontalEdgeAndReportsLineFeature)
   EXPECT_NEAR(s.getTheta(), kPi / 2.0, 0.01);
 }
 
+TEST(EdgeTracker, ExposesTheTrackedPointsForDrawing)
+{
+  EdgeTracker tracker{EdgeTrackerParams{}};
+  const auto [a, b] = seeds(300, 0, 0);
+  ASSERT_TRUE(tracker.init(render(300), a, b));
+
+  const auto pixels = tracker.sitePixels();
+  // ViSP's own counter is updated at a different point of its resampling, so it can
+  // differ from the number of sites still marked as tracked by a few.
+  EXPECT_NEAR(static_cast<int>(pixels.size()), tracker.trackedPoints(), 10);
+  ASSERT_GT(pixels.size(), 100u);
+  float min_x = 1e9f, max_x = -1e9f;
+  for (const auto & p : pixels) {
+    EXPECT_NEAR(p.y, 300.5, kEdgeTolerancePx);  // every point lies on the edge
+    min_x = std::min(min_x, p.x);
+    max_x = std::max(max_x, p.x);
+  }
+  EXPECT_LT(min_x, 150.f);  // and they span the seeded segment, 100 to 1180
+  EXPECT_GT(max_x, 1130.f);
+}
+
+TEST(EdgeTracker, HasNoPointsToDrawOnceTheEdgeIsLost)
+{
+  EdgeTracker tracker{EdgeTrackerParams{}};
+  const auto [a, b] = seeds(300, 0, 0);
+  ASSERT_TRUE(tracker.init(render(300), a, b));
+  tracker.track(cv::Mat(kHeight, kWidth, CV_8UC3, cv::Scalar(150, 150, 150)));
+  EXPECT_TRUE(tracker.sitePixels().empty());
+}
+
 TEST(EdgeTracker, FeatureSignFollowsWhichSideIsDark)
 {
   // The same horizontal edge with the polarity reversed flips theta to -pi/2 and

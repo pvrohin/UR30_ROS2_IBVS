@@ -173,6 +173,17 @@ bool EdgeTracker::track(const cv::Mat & image)
 
 int EdgeTracker::trackedPoints() const {return line_.getNbPoints();}
 
+std::vector<cv::Point2f> EdgeTracker::sitePixels() const
+{
+  std::vector<cv::Point2f> pixels;
+  for (const vpMeSite & site : line_.getMeList()) {
+    if (site.getState() == vpMeSite::NO_SUPPRESSION) {
+      pixels.emplace_back(static_cast<float>(site.get_jfloat()), static_cast<float>(site.get_ifloat()));
+    }
+  }
+  return pixels;
+}
+
 void EdgeTracker::feature(const vpCameraParameters & cam, vpFeatureLine & s) const
 {
   vpFeatureBuilder::create(s, cam, line_);
