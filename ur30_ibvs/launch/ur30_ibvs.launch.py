@@ -11,6 +11,7 @@ def generate_launch_description():
     gazebo_gui = LaunchConfiguration("gazebo_gui")
     launch_rviz = LaunchConfiguration("launch_rviz")
     run_ibvs = LaunchConfiguration("run_ibvs")
+    bridge_depth = LaunchConfiguration("bridge_depth")
 
     cell = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -18,7 +19,11 @@ def generate_launch_description():
                 [FindPackageShare("ur30_cell_bringup"), "launch", "ur30_cell.launch.py"]
             )
         ),
-        launch_arguments={"gazebo_gui": gazebo_gui, "launch_rviz": launch_rviz}.items(),
+        launch_arguments={
+            "gazebo_gui": gazebo_gui,
+            "launch_rviz": launch_rviz,
+            "bridge_depth": bridge_depth,
+        }.items(),
     )
 
     servo = IncludeLaunchDescription(
@@ -54,6 +59,12 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("gazebo_gui", default_value="true"),
             DeclareLaunchArgument("launch_rviz", default_value="true"),
+            DeclareLaunchArgument(
+                "bridge_depth",
+                default_value="false",
+                description="Also bridge the depth image and point cloud (CPU-heavy, not "
+                "used by the IBVS pipeline; enable them to view in RViz).",
+            ),
             DeclareLaunchArgument(
                 "run_ibvs",
                 default_value="true",

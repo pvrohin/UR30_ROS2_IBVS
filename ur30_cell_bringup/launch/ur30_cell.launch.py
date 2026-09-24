@@ -38,6 +38,8 @@ def launch_setup(context, *args, **kwargs):
     gazebo_gui = LaunchConfiguration("gazebo_gui")
     world_file = LaunchConfiguration("world_file")
     camera_bridge_config_file = LaunchConfiguration("camera_bridge_config_file")
+    camera_depth_bridge_config_file = LaunchConfiguration("camera_depth_bridge_config_file")
+    bridge_depth = LaunchConfiguration("bridge_depth")
 
     robot_description_content = Command(
         [
@@ -166,12 +168,22 @@ def launch_setup(context, *args, **kwargs):
         output="screen",
     )
 
-    # Bridge the eye-in-hand camera's color/depth/points/camera_info topics
+    # Bridge the eye-in-hand camera's color image and camera_info
     camera_bridge = Node(
         package="ros_gz_bridge",
         executable="parameter_bridge",
         arguments=["--ros-args", "-p", (["config_file:=", camera_bridge_config_file])],
         output="screen",
+    )
+
+    # Depth image and point cloud, optional: they are the heaviest topics by far
+    camera_depth_bridge = Node(
+        package="ros_gz_bridge",
+        executable="parameter_bridge",
+        name="camera_depth_bridge",
+        arguments=["--ros-args", "-p", (["config_file:=", camera_depth_bridge_config_file])],
+        output="screen",
+        condition=IfCondition(bridge_depth),
     )
 
     nodes_to_start = [
@@ -185,6 +197,7 @@ def launch_setup(context, *args, **kwargs):
         gz_launch_description,
         gz_sim_bridge,
         camera_bridge,
+        camera_depth_bridge,
     ]
 
     return nodes_to_start
@@ -312,7 +325,24 @@ def generate_launch_description():
             default_value=PathJoinSubstitution(
                 [FindPackageShare("ur30_cell_bringup"), "config", "camera_bridge.yaml"]
             ),
-            description="Absolute path to the ros_gz_bridge YAML config for the eye-in-hand camera topics.",
+            description="Absolute path to the ros_gz_bridge YAML config for the eye-in-hand camera color image and camera_info.",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "camera_depth_bridge_config_file",
+            default_value=PathJoinSubstitution(
+                [FindPackageShare("ur30_cell_bringup"), "config", "camera_depth_bridge.yaml"]
+            ),
+            description="Absolute path to the ros_gz_bridge YAML config for the depth image and point cloud.",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "bridge_depth",
+            default_value="true",
+            description="Bridge the depth image and point cloud to ROS. They are the heaviest "
+            "topics and CPU-hungry; the IBVS pipeline does not need them.",
         )
     )
 
