@@ -23,12 +23,13 @@ find_package(OpenCV REQUIRED)
 find_package(VISP REQUIRED)
 
 # Plain C++ helper classes with no ROS dependency, so they can be unit tested.
-add_library(ur30_ibvs_core src/panel_detector.cpp)
+add_library(ur30_ibvs_core src/panel_detector.cpp src/edge_tracker.cpp)
 target_include_directories(ur30_ibvs_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
-  ${OpenCV_INCLUDE_DIRS})
-target_link_libraries(ur30_ibvs_core ${OpenCV_LIBS})
+  ${OpenCV_INCLUDE_DIRS}
+  ${VISP_INCLUDE_DIRS})
+target_link_libraries(ur30_ibvs_core ${OpenCV_LIBS} ${VISP_LIBRARIES})
 
 install(TARGETS ur30_ibvs_core LIBRARY DESTINATION lib ARCHIVE DESTINATION lib)
 
@@ -36,6 +37,8 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_panel_detector test/test_panel_detector.cpp)
   target_link_libraries(test_panel_detector ur30_ibvs_core)
+  ament_add_gtest(test_edge_tracker test/test_edge_tracker.cpp)
+  target_link_libraries(test_edge_tracker ur30_ibvs_core)
 endif()
 
 # Executable target is added here once the state machine is implemented.

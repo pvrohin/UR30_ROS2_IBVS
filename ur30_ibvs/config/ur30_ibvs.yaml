@@ -56,7 +56,11 @@ ibvs_state_machine:
     # ---- stage 3: SERVO (vpMeLine + vpFeatureLine IBVS) ------------------
     servo_lambda: 0.6
     # Desired line in normalised image coordinates: horizontal (edge along the
-    # image x axis) and passing through the image centre.
+    # image x axis) and passing through the image centre. theta is +pi/2 when
+    # the dark panel is BELOW the edge in the image and -pi/2 when it is above
+    # (the sign of rho flips too), so the state machine must take the sign from
+    # the measured feature at init. Confirmed on a real rendered close-up above
+    # the +y edge: feature (rho, theta) = (-0.0015, +1.5708), dark below.
     desired_rho: 0.0
     desired_theta: 1.5708
     standoff_kp: 1.0  # [1/s] holds servo_standoff; a single line cannot constrain it
@@ -64,7 +68,13 @@ ibvs_state_machine:
     slide_speed: 0.0  # [m/s] along the edge; 0 holds position. Mind the 0.9 m edge length.
     converged_threshold: 0.005  # feature error norm reported as "converged"
 
-    # Moving-edges tracker settings (vpMe); initial guesses.
-    me_range: 10
-    me_sample_step: 5.0
-    me_threshold: 20.0
+    # Moving-edges tracker (vpMe, NORMALIZED_THRESHOLD). Initial guesses, but
+    # they tracked a real close-up frame with 217 points.
+    me_range: 10  # [px] search either side of the line while tracking
+    me_sample_step: 5.0  # [px] between tracked points
+    me_threshold: 20.0  # minimum luminance contrast of an edge, 0-255
+    # ViSP's init needs the seed ON the edge (4 px off already fails), so the
+    # seed, projected from an estimated pose, is first snapped to the strongest
+    # edge within this distance. 50 px is ~1.5 cm at the 0.2 m standoff.
+    edge_snap_radius: 50.0
+    edge_min_tracked_fraction: 0.5  # below this share of the initial points, tracking is lost
