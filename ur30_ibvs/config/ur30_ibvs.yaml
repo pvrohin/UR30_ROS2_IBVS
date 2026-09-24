@@ -87,8 +87,13 @@ ibvs_state_machine:
     # stalls with rho off by up to ~0.008 (about 1 mm at the 0.2 m standoff). 0.01
     # is just outside that; the first end-to-end run settled within ~1 mm.
     converged_threshold: 0.01
-    # Consecutive failures to (re-)seed or keep the edge before giving up (FAILED).
-    reseed_attempts: 3
+    # While servoing, the node gives up (FAILED, zero twists) when the edge has been
+    # missing for this long, or when no image has arrived for this long. Both are
+    # durations rather than frame counts, so they do not depend on the camera rate
+    # or on dropped frames. While the edge is missing it is re-seeded from the panel
+    # pose on every frame.
+    edge_lost_timeout_sec: 2.0
+    image_timeout_sec: 2.0
 
     # Moving-edges tracker (vpMe, NORMALIZED_THRESHOLD). Initial guesses, but
     # they tracked a real close-up frame with 217 points.

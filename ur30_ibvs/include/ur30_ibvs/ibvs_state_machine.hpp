@@ -23,6 +23,7 @@
 #include "ur30_ibvs/ibvs_controller.hpp"
 #include "ur30_ibvs/panel_detector.hpp"
 #include "ur30_ibvs/panel_geometry.hpp"
+#include "ur30_ibvs/servo_supervisor.hpp"
 
 namespace ur30_ibvs
 {
@@ -74,7 +75,9 @@ private:
 
     double servo_lambda, desired_rho, standoff_kp, standoff_max_speed, slide_speed;
     double converged_threshold;
-    int reseed_attempts;
+    // Give up (FAILED) when the edge has been missing this long, or no image has
+    // arrived for this long, while servoing.
+    double edge_lost_timeout_sec, image_timeout_sec;
   };
 
   Params loadParams();
@@ -101,6 +104,7 @@ private:
 
   const Params params_;
   State state_ = State::WAIT_READY;
+  ServoSupervisor supervisor_;
 
   std::unique_ptr<PanelDetector> detector_;
   std::unique_ptr<EdgeTracker> tracker_;
@@ -133,8 +137,6 @@ private:
 
   // SERVO
   bool tracker_active_ = false;
-  int failed_seeds_ = 0;
-  int steady_frames_ = 0;
   bool converged_reported_ = false;
   std::array<double, 6> servo_command_{};
   rclcpp::Time servo_command_stamp_{0, 0, RCL_ROS_TIME};

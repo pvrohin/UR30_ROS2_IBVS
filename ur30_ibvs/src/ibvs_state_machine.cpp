@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 
 #include <cv_bridge/cv_bridge.hpp>
 
@@ -15,6 +16,15 @@ using namespace VISP_NAMESPACE_NAME;
 
 namespace ur30_ibvs
 {
+namespace
+{
+std::string seconds(double s)
+{
+  char text[32];
+  std::snprintf(text, sizeof(text), "%.1f s", s);
+  return text;
+}
+}  // namespace
 
 const char * toString(State state)
 {
@@ -89,7 +99,8 @@ IbvsStateMachine::Params IbvsStateMachine::loadParams()
   p.standoff_max_speed = num("standoff_max_speed", 0.03);
   p.slide_speed = num("slide_speed", 0.0);
   p.converged_threshold = num("converged_threshold", 0.005);
-  p.reseed_attempts = integer("reseed_attempts", 3);
+  p.edge_lost_timeout_sec = num("edge_lost_timeout_sec", 2.0);
+  p.image_timeout_sec = num("image_timeout_sec", 2.0);
 
   p.edge.range = static_cast<unsigned int>(integer("me_range", 10));
   p.edge.sample_step = num("me_sample_step", 5.0);
@@ -100,7 +111,8 @@ IbvsStateMachine::Params IbvsStateMachine::loadParams()
 }
 
 IbvsStateMachine::IbvsStateMachine()
-: Node("ibvs_state_machine"), params_(loadParams())
+: Node("ibvs_state_machine"), params_(loadParams()),
+  supervisor_(params_.image_timeout_sec, params_.edge_lost_timeout_sec)
 {
   detector_ = std::make_unique<PanelDetector>(params_.detector);
   tracker_ = std::make_unique<EdgeTracker>(params_.edge);
@@ -139,6 +151,7 @@ void IbvsStateMachine::onCameraInfo(const sensor_msgs::msg::CameraInfo::ConstSha
 
 void IbvsStateMachine::onImage(const sensor_msgs::msg::Image::ConstSharedPtr & msg)
 {
+  supervisor_.onImage(now().seconds());
   if (!K_ || (state_ != State::SEARCH && state_ != State::SERVO)) {
     return;
   }
@@ -171,6 +184,17 @@ void IbvsStateMachine::onTimer()
       tickApproach();
       break;
     case State::SERVO: {
+        const double t = now().seconds();
+        switch (supervisor_.check(t)) {
+          case SupervisorVerdict::CAMERA_LOST:
+            fail("the camera feed stopped: no image for " + seconds(supervisor_.secondsSinceImage(t)));
+            return;
+          case SupervisorVerdict::EDGE_LOST:
+            fail("the edge was not found for " + seconds(supervisor_.secondsEdgeMissing(t)));
+            return;
+          case SupervisorVerdict::OK:
+            break;
+        }
         const bool fresh =
           (now() - servo_command_stamp_).seconds() < params_.stale_command_sec;
         publishTwist(tracker_active_ && fresh ? servo_command_ : std::array<double, 6>{});
@@ -339,9 +363,8 @@ void IbvsStateMachine::tickApproach()
   {
     publishTwist({});
     tracker_active_ = false;
-    failed_seeds_ = 0;
-    steady_frames_ = 0;
     converged_reported_ = false;
+    supervisor_.start(now().seconds());
     transitionTo(State::SERVO);
     return;
   }
@@ -380,21 +403,20 @@ void IbvsStateMachine::handleServo(const cv::Mat & bgr)
     return;
   }
 
+  const double t = now().seconds();
   if (!tracker_active_) {
     servo_command_ = {};
-    if (failed_seeds_ > params_.reseed_attempts) {
-      fail("the edge could not be found again after losing it");
-      return;
-    }
     if (seedEdgeTracker(bgr, *world_T_cam)) {
       tracker_active_ = true;
-      steady_frames_ = 0;
+      supervisor_.onEdgeLocked();
       RCLCPP_INFO(get_logger(), "edge locked (%d tracked points)", tracker_->trackedPoints());
     } else {
-      ++failed_seeds_;
-      RCLCPP_WARN(
-        get_logger(), "could not seed the edge tracker (failure %d of %d)", failed_seeds_,
-        params_.reseed_attempts);
+      // Retry on every frame; the supervisor gives up once this has lasted too long.
+      supervisor_.onEdgeMissing(t);
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "could not find the edge (missing for %.1f s, giving up after %.1f s)",
+        supervisor_.secondsEdgeMissing(t), params_.edge_lost_timeout_sec);
     }
     return;
   }
@@ -402,12 +424,12 @@ void IbvsStateMachine::handleServo(const cv::Mat & bgr)
   if (!tracker_->track(bgr)) {
     tracker_active_ = false;
     servo_command_ = {};
-    steady_frames_ = 0;
     converged_reported_ = false;
-    ++failed_seeds_;
+    supervisor_.onEdgeMissing(t);
     RCLCPP_WARN(get_logger(), "lost the edge; re-seeding from the panel pose");
     return;
   }
+  supervisor_.onEdgeLocked();
 
   const vpCameraParameters cam((*K_)(0, 0), (*K_)(1, 1), (*K_)(0, 2), (*K_)(1, 2));
   vpFeatureLine s;
@@ -422,9 +444,6 @@ void IbvsStateMachine::handleServo(const cv::Mat & bgr)
   servo_command_ = command;
   servo_command_stamp_ = now();
 
-  if (++steady_frames_ >= 30) {
-    failed_seeds_ = 0;
-  }
   const bool converged = controller_->errorNorm() < params_.converged_threshold &&
     std::abs(standoff_error) < 0.005;
   if (converged && !converged_reported_) {

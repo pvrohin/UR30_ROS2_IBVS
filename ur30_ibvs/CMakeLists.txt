@@ -26,7 +26,8 @@ add_library(ur30_ibvs_core
   src/panel_detector.cpp
   src/edge_tracker.cpp
   src/ibvs_controller.cpp
-  src/panel_geometry.cpp)
+  src/panel_geometry.cpp
+  src/servo_supervisor.cpp)
 target_include_directories(ur30_ibvs_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
@@ -46,6 +47,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_ibvs_controller ur30_ibvs_core)
   ament_add_gtest(test_panel_geometry test/test_panel_geometry.cpp)
   target_link_libraries(test_panel_geometry ur30_ibvs_core)
+  ament_add_gtest(test_servo_supervisor test/test_servo_supervisor.cpp)
+  target_link_libraries(test_servo_supervisor ur30_ibvs_core)
 endif()
 
 add_executable(ibvs_node src/ibvs_node_main.cpp src/ibvs_state_machine.cpp)
