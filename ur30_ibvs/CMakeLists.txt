@@ -26,7 +26,8 @@ find_package(VISP REQUIRED)
 add_library(ur30_ibvs_core
   src/panel_detector.cpp
   src/edge_tracker.cpp
-  src/ibvs_controller.cpp)
+  src/ibvs_controller.cpp
+  src/panel_geometry.cpp)
 target_include_directories(ur30_ibvs_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
@@ -44,6 +45,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_edge_tracker ur30_ibvs_core)
   ament_add_gtest(test_ibvs_controller test/test_ibvs_controller.cpp)
   target_link_libraries(test_ibvs_controller ur30_ibvs_core)
+  ament_add_gtest(test_panel_geometry test/test_panel_geometry.cpp)
+  target_link_libraries(test_panel_geometry ur30_ibvs_core)
 endif()
 
 # Executable target is added here once the state machine is implemented.
