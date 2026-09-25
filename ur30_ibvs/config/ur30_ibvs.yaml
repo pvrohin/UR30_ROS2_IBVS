@@ -13,6 +13,10 @@ ibvs_state_machine:
     control_rate_hz: 50.0  # Servo drops twists older than 0.1 s, keep well above 10 Hz
     # A SERVO command older than this (no new image) is replaced by a zero twist.
     stale_command_sec: 0.25
+    # Once every dependency is up (TF, camera, controllers, Servo) the node holds still this
+    # long before moving the arm, so the cell can be looked at in Gazebo and RViz first.
+    # Counted in simulation time. 0 starts at once.
+    start_delay_sec: 5.0
     joint_names:
       [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint,
         wrist_3_joint]

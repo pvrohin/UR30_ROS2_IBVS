@@ -102,6 +102,7 @@ IbvsStateMachine::Params IbvsStateMachine::loadParams()
   p.survey_duration_sec = num("survey_duration_sec", 6.0);
   p.control_rate_hz = num("control_rate_hz", 50.0);
   p.stale_command_sec = num("stale_command_sec", 0.25);
+  p.start_delay_sec = num("start_delay_sec", 5.0);
 
   p.panel_length = num("panel_length", 0.9);
   p.panel_width = num("panel_width", 0.55);
@@ -266,7 +267,16 @@ void IbvsStateMachine::tickWaitReady()
   need(switch_client_->service_is_ready(), "switch_controller service");
   need(servo_type_client_->service_is_ready(), "servo switch_command_type service");
   if (!missing.empty()) {
+    ready_since_.reset();
     RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000, "waiting for: %s", missing.c_str());
+    return;
+  }
+  if (!ready_since_) {
+    ready_since_ = now();
+    RCLCPP_INFO(
+      get_logger(), "everything is up; the robot starts moving in %.1f s", params_.start_delay_sec);
+  }
+  if ((now() - *ready_since_).seconds() < params_.start_delay_sec) {
     return;
   }
   sendSurveyGoal();

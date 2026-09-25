@@ -63,6 +63,9 @@ private:
     std::vector<std::string> joint_names;
     std::vector<double> survey_joint_positions;
     double survey_duration_sec, control_rate_hz, stale_command_sec;
+    // Pause once every dependency is up, before the arm first moves, so the cell can be
+    // looked at in Gazebo and RViz.
+    double start_delay_sec;
 
     double panel_length, panel_width, panel_top_height;
     PanelDetectorParams detector;
@@ -136,6 +139,9 @@ private:
 
   std::optional<cv::Matx33d> K_;
   std::optional<cv::Matx44d> tool_T_cam_;  // fixed: the camera pose in the command frame
+
+  // WAIT_READY: when every dependency first became available (reset if one drops out).
+  std::optional<rclcpp::Time> ready_since_;
 
   // SEARCH
   int good_detections_ = 0;
