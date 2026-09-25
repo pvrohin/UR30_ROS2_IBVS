@@ -49,6 +49,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_panel_geometry ur30_ibvs_core)
   ament_add_gtest(test_servo_supervisor test/test_servo_supervisor.cpp)
   target_link_libraries(test_servo_supervisor ur30_ibvs_core)
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_ibvs_test_runner test/test_ibvs_test_runner.py)
 endif()
 
 add_executable(ibvs_node src/ibvs_node_main.cpp src/ibvs_state_machine.cpp)
@@ -60,12 +62,14 @@ ament_target_dependencies(ibvs_node
   sensor_msgs
   geometry_msgs
   std_msgs
+  std_srvs
   control_msgs
   controller_manager_msgs
   moveit_msgs
   tf2_ros)
 
 install(TARGETS ibvs_node DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS scripts/ibvs_test_runner.py DESTINATION lib/${PROJECT_NAME})
 
 install(
   DIRECTORY config launch

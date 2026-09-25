@@ -66,6 +66,8 @@ const char * toString(State state)
 {
   switch (state) {
     case State::WAIT_READY: return "WAIT_READY";
+    case State::IDLE: return "IDLE";
+    case State::RESETTING: return "RESETTING";
     case State::GO_TO_SURVEY: return "GO_TO_SURVEY";
     case State::SEARCH: return "SEARCH";
     case State::SWITCH_CONTROL: return "SWITCH_CONTROL";
@@ -103,6 +105,7 @@ IbvsStateMachine::Params IbvsStateMachine::loadParams()
   p.control_rate_hz = num("control_rate_hz", 50.0);
   p.stale_command_sec = num("stale_command_sec", 0.25);
   p.start_delay_sec = num("start_delay_sec", 5.0);
+  p.auto_start = declare_parameter<bool>("auto_start", true);
 
   p.panel_length = num("panel_length", 0.9);
   p.panel_width = num("panel_width", 0.55);
@@ -174,6 +177,11 @@ IbvsStateMachine::IbvsStateMachine()
   jtc_client_ = rclcpp_action::create_client<FollowJointTrajectory>(this, params_.jtc_action);
   switch_client_ = create_client<SwitchController>("/controller_manager/switch_controller");
   servo_type_client_ = create_client<ServoCommandType>("/servo_node/switch_command_type");
+  start_srv_ = create_service<std_srvs::srv::Trigger>(
+    "~/start",
+    [this](
+      const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+      std::shared_ptr<std_srvs::srv::Trigger::Response> response) {onStart(request, response);});
 
   timer_ = create_timer(
     std::chrono::duration<double>(1.0 / params_.control_rate_hz), [this]() {onTimer();});
@@ -279,7 +287,56 @@ void IbvsStateMachine::tickWaitReady()
   if ((now() - *ready_since_).seconds() < params_.start_delay_sec) {
     return;
   }
+  if (!params_.auto_start) {
+    RCLCPP_INFO(get_logger(), "ready; waiting for a call to %s", start_srv_->get_service_name());
+    transitionTo(State::IDLE);
+    return;
+  }
   sendSurveyGoal();
+}
+
+void IbvsStateMachine::onStart(
+  const std::shared_ptr<std_srvs::srv::Trigger::Request>,
+  std::shared_ptr<std_srvs::srv::Trigger::Response> response)
+{
+  if (state_ != State::IDLE && state_ != State::SERVO && state_ != State::FAILED) {
+    response->success = false;
+    response->message = std::string("not accepted in state ") + toString(state_);
+    return;
+  }
+  RCLCPP_INFO(get_logger(), "start requested in state %s", toString(state_));
+  response->success = true;
+  response->message = "starting";
+  publishTwist({});
+  tracker_active_ = false;
+  converged_reported_ = false;
+  servo_command_ = {};
+  if (velocity_active_) {
+    beginRestoreControl();
+  } else {
+    sendSurveyGoal();
+  }
+}
+
+void IbvsStateMachine::beginRestoreControl()
+{
+  transitionTo(State::RESETTING);
+  auto request = std::make_shared<SwitchController::Request>();
+  request->activate_controllers = {params_.position_controller};
+  request->deactivate_controllers = {params_.velocity_controller};
+  request->strictness = SwitchController::Request::STRICT;
+  request->activate_asap = true;
+  request->timeout.sec = 5;
+
+  switch_client_->async_send_request(
+    request, [this](rclcpp::Client<SwitchController>::SharedFuture future) {
+      if (!future.get()->ok) {
+        fail("the controller manager rejected the switch back to the trajectory controller");
+        return;
+      }
+      velocity_active_ = false;
+      sendSurveyGoal();
+    });
 }
 
 void IbvsStateMachine::sendSurveyGoal()

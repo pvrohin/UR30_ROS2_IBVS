@@ -15,6 +15,7 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <std_srvs/srv/trigger.hpp>
 #include <std_msgs/msg/header.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <tf2_ros/buffer.h>
@@ -32,6 +33,8 @@ namespace ur30_ibvs
 enum class State
 {
   WAIT_READY,      // waiting for camera info, TF, the trajectory action and both services
+  IDLE,            // ready, but auto_start is off: waiting for a call to ~/start
+  RESETTING,       // ~/start while servoing: hand the joints back to the trajectory controller
   GO_TO_SURVEY,    // trajectory controller moves the arm to the survey pose
   SEARCH,          // hover and detect the panel
   SWITCH_CONTROL,  // hand the joints from the trajectory to the velocity controller
@@ -66,6 +69,8 @@ private:
     // Pause once every dependency is up, before the arm first moves, so the cell can be
     // looked at in Gazebo and RViz.
     double start_delay_sec;
+    // false: after WAIT_READY go to IDLE and wait for ~/start (a test runner drives the cycles).
+    bool auto_start;
 
     double panel_length, panel_width, panel_top_height;
     PanelDetectorParams detector;
@@ -91,6 +96,11 @@ private:
 
   // State handlers.
   void tickWaitReady();
+  // ~/start: run a (further) cycle. Accepted in IDLE, SERVO and FAILED.
+  void onStart(
+    const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+    std::shared_ptr<std_srvs::srv::Trigger::Response> response);
+  void beginRestoreControl();
   void sendSurveyGoal();
   void handleSearch(const cv::Mat & bgr);
   void beginSwitchControl();
@@ -136,6 +146,7 @@ private:
   rclcpp_action::Client<FollowJointTrajectory>::SharedPtr jtc_client_;
   rclcpp::Client<SwitchController>::SharedPtr switch_client_;
   rclcpp::Client<ServoCommandType>::SharedPtr servo_type_client_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr start_srv_;
 
   std::optional<cv::Matx33d> K_;
   std::optional<cv::Matx44d> tool_T_cam_;  // fixed: the camera pose in the command frame
