@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<!-- The door panel as a model of its own, so a test runner can move it around the table
+     (gz set_pose) between runs. Same geometry as the panel inside ur30_cell.xacro:
+     use it with include_panel:=false there.
+     The model origin is the centre of the panel, so a panel resting where ur30_cell.xacro
+     puts it has model pose (0.8, 0, 0.79). Static: it is moved, never pushed. -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="door_panel_test">
+  <xacro:include filename="$(find ur30_cell_description)/urdf/door_panel.xacro"/>
+
+  <link name="panel_root"/>
+
+  <xacro:door_panel parent="panel_root" name="door_panel"
+      panel_length="0.9" panel_width="0.55" panel_thickness="0.03">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:door_panel>
+
+  <gazebo>
+    <static>true</static>
+  </gazebo>
+</robot>

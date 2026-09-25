@@ -40,6 +40,7 @@ def launch_setup(context, *args, **kwargs):
     camera_bridge_config_file = LaunchConfiguration("camera_bridge_config_file")
     camera_depth_bridge_config_file = LaunchConfiguration("camera_depth_bridge_config_file")
     bridge_depth = LaunchConfiguration("bridge_depth")
+    include_panel = LaunchConfiguration("include_panel")
 
     robot_description_content = Command(
         [
@@ -67,6 +68,9 @@ def launch_setup(context, *args, **kwargs):
             " ",
             "simulation_controllers:=",
             controllers_file,
+            " ",
+            "include_panel:=",
+            include_panel,
         ]
     )
     robot_description = {"robot_description": robot_description_content}
@@ -343,6 +347,15 @@ def generate_launch_description():
             default_value="true",
             description="Bridge the depth image and point cloud to ROS. They are the heaviest "
             "topics and CPU-hungry; the IBVS pipeline does not need them.",
+        )
+    )
+
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "include_panel",
+            default_value="true",
+            description="Build the door panel into the robot model. false leaves it out, for runs "
+            "that spawn it as a separate, movable model.",
         )
     )
 
