@@ -128,6 +128,8 @@ camera bridge and RViz. RViz shows the robot model, TF and the camera images.
 
 ## Visual servoing branch
 
+![IBVS demo: the UR30 surveys the table, approaches the door panel and servos on its edge](docs/IBVS.gif)
+
 Image-based visual servoing (IBVS) with [ViSP](https://github.com/lagadic/visp)
 lives on the branch `custom_ur30_visp`, not on `main`. It adds:
 
