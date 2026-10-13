@@ -1,0 +1,22 @@
+# Overrides for the dispense lap demo (ur30_ibvs.launch.py demo:=true), loaded after
+# ur30_ibvs.yaml.
+#
+# The lap goes round the whole panel, and with the 0.9 m side along world x its far end
+# (x = 1.25 m, camera 1.0 m up) is beyond what the UR30 can reach with the camera pointing
+# down: MoveIt Servo stopped there with "Very close to a singularity". So the demo turns
+# the panel by 90 degrees (long side along world y, spawned by the launch file) and the
+# survey camera with it: the same survey pose with wrist_3 turned by -90 degrees, so that
+# image x is along world +y and the panel's x axis is along image x again. Offline
+# kinematics of the whole lap (camera 0.2 m above the boundary, pointing down) give a
+# Jacobian condition number of at most ~16 and the farthest point 1.17 m from the base.
+ibvs_state_machine:
+  ros__parameters:
+    dispense_enabled: true
+    survey_joint_positions: [-0.2619, -1.3611, 0.9311, -1.1408, -1.5708, -1.8327]
+    # The part moves during the lap, so the lateral loop needs more gain and more room
+    # than holding above a still edge (ur30_ibvs.yaml): a ramp of speed v leaves a steady
+    # lateral error v / lambda, and the moving-edge search and the seeding must not lose
+    # an edge that has moved a few centimetres.
+    dispense_lambda: 1.5
+    me_range: 25  # [px]
+    edge_snap_radius: 120.0  # [px] ~3.7 cm at the 0.2 m standoff

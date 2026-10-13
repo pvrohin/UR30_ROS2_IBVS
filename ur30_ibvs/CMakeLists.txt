@@ -27,7 +27,9 @@ add_library(ur30_ibvs_core
   src/edge_tracker.cpp
   src/ibvs_controller.cpp
   src/panel_geometry.cpp
-  src/servo_supervisor.cpp)
+  src/servo_supervisor.cpp
+  src/corner_finder.cpp
+  src/virtual_view.cpp)
 target_include_directories(ur30_ibvs_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
@@ -49,8 +51,13 @@ if(BUILD_TESTING)
   target_link_libraries(test_panel_geometry ur30_ibvs_core)
   ament_add_gtest(test_servo_supervisor test/test_servo_supervisor.cpp)
   target_link_libraries(test_servo_supervisor ur30_ibvs_core)
+  ament_add_gtest(test_virtual_view test/test_virtual_view.cpp)
+  target_link_libraries(test_virtual_view ur30_ibvs_core)
+  ament_add_gtest(test_corner_finder test/test_corner_finder.cpp)
+  target_link_libraries(test_corner_finder ur30_ibvs_core)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_ibvs_test_runner test/test_ibvs_test_runner.py)
+  ament_add_pytest_test(test_part_shifter test/test_part_shifter.py)
 endif()
 
 add_executable(ibvs_node src/ibvs_node_main.cpp src/ibvs_state_machine.cpp)
@@ -69,7 +76,8 @@ ament_target_dependencies(ibvs_node
   tf2_ros)
 
 install(TARGETS ibvs_node DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS scripts/ibvs_test_runner.py DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS scripts/ibvs_test_runner.py scripts/part_shifter.py
+  DESTINATION lib/${PROJECT_NAME})
 
 install(
   DIRECTORY config launch

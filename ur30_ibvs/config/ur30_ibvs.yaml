@@ -109,3 +109,25 @@ ibvs_state_machine:
     # edge within this distance. 50 px is ~1.5 cm at the 0.2 m standoff.
     edge_snap_radius: 50.0
     edge_min_tracked_fraction: 0.5  # below this share of the initial points, tracking is lost
+
+    # ---- stage 4: DISPENSE (a lap round the boundary, replaces holding in SERVO) -------
+    # The lap is counter-clockwise, starting on the followed edge: half of it, the three
+    # other sides, and the other half. The camera keeps its heading; on each side the image
+    # is turned by a multiple of 90 degrees (a "virtual camera") so that the edge looks
+    # horizontal and the travel goes to the image right, which is what the controller
+    # expects. Across the edge and the yaw are IBVS; along the edge it is the speed below.
+    dispense_enabled: false  # the launch file's demo:=true turns it on
+    dispense_speed: 0.03  # [m/s] along the edge (the pre-programmed part of the path)
+    # The corner is read from a strip parallel to the edge, this far on the part side [px].
+    corner_strip_offset_px: 10.0
+    corner_bright_run_px: 6  # the part has ended after this many bright pixels in a row
+    # A corner counts as reached when it is this close to the image centre (or past it) on
+    # corner_confirm_frames frames in a row. At 0.2 m one pixel is ~0.3 mm.
+    corner_tolerance_px: 6.0
+    corner_confirm_frames: 2
+    corner_pause_sec: 0.5  # no sliding for this long after turning a corner
+    corner_min_leg_distance: 0.08  # [m] on a new side before a corner is looked for
+    # Half the moving-edge points are gone when the camera is over the corner, so the
+    # "tracking lost" share is lower than in SERVO.
+    dispense_min_tracked_fraction: 0.3
+    dispense_lambda: 1.5  # servo gain on the lap; the part may move, see ur30_ibvs_demo.yaml

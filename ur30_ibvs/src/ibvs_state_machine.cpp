@@ -39,6 +39,10 @@ const cv::Scalar kRed(0, 0, 255);
 const cv::Scalar kCyan(255, 255, 0);
 const cv::Scalar kYellow(0, 220, 255);
 
+// On a leg, the edge behind the camera is used for seeds once the camera has moved this far
+// from where the leg began (before that, behind it is the previous side of the part).
+constexpr double kAheadSeedDistance = 0.10;
+
 void label(cv::Mat & image, const std::string & text, int row)
 {
   const cv::Point at(20, 40 + 34 * row);
@@ -73,6 +77,8 @@ const char * toString(State state)
     case State::SWITCH_CONTROL: return "SWITCH_CONTROL";
     case State::APPROACH: return "APPROACH";
     case State::SERVO: return "SERVO";
+    case State::DISPENSE: return "DISPENSE";
+    case State::DONE: return "DONE";
     case State::FAILED: return "FAILED";
   }
   return "UNKNOWN";
@@ -142,6 +148,18 @@ IbvsStateMachine::Params IbvsStateMachine::loadParams()
   p.edge_lost_timeout_sec = num("edge_lost_timeout_sec", 2.0);
   p.image_timeout_sec = num("image_timeout_sec", 2.0);
 
+  p.dispense_enabled = declare_parameter<bool>("dispense_enabled", false);
+  p.dispense_speed = num("dispense_speed", 0.03);
+  p.corner.dark_threshold = p.detector.dark_threshold;
+  p.corner.strip_offset_px = num("corner_strip_offset_px", 10.0);
+  p.corner.bright_run_px = integer("corner_bright_run_px", 6);
+  p.corner_tolerance_px = num("corner_tolerance_px", 6.0);
+  p.corner_confirm_frames = integer("corner_confirm_frames", 2);
+  p.corner_pause_sec = num("corner_pause_sec", 0.5);
+  p.corner_min_leg_distance = num("corner_min_leg_distance", 0.08);
+  p.dispense_min_tracked_fraction = num("dispense_min_tracked_fraction", 0.3);
+  p.dispense_lambda = num("dispense_lambda", 1.5);
+
   p.edge.range = static_cast<unsigned int>(integer("me_range", 10));
   p.edge.sample_step = num("me_sample_step", 5.0);
   p.edge.threshold = num("me_threshold", 20.0);
@@ -160,6 +178,7 @@ IbvsStateMachine::IbvsStateMachine()
   controller_params.lambda = params_.servo_lambda;
   controller_params.desired_rho = params_.desired_rho;
   controller_ = std::make_unique<IbvsController>(controller_params);
+  corner_finder_ = std::make_unique<CornerFinder>(params_.corner);
 
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>(get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -199,7 +218,7 @@ void IbvsStateMachine::onImage(const sensor_msgs::msg::Image::ConstSharedPtr & m
 {
   supervisor_.onImage(now().seconds());
   image_header_ = msg->header;
-  if (!K_ || (state_ != State::SEARCH && state_ != State::SERVO)) {
+  if (!K_ || (state_ != State::SEARCH && state_ != State::SERVO && state_ != State::DISPENSE)) {
     return;
   }
   cv_bridge::CvImageConstPtr image;
@@ -211,6 +230,8 @@ void IbvsStateMachine::onImage(const sensor_msgs::msg::Image::ConstSharedPtr & m
   }
   if (state_ == State::SEARCH) {
     handleSearch(image->image);
+  } else if (state_ == State::DISPENSE) {
+    handleDispense(image->image);
   } else {
     handleServo(image->image);
   }
@@ -230,7 +251,8 @@ void IbvsStateMachine::onTimer()
     case State::APPROACH:
       tickApproach();
       break;
-    case State::SERVO: {
+    case State::SERVO:
+    case State::DISPENSE: {
         const double t = now().seconds();
         switch (supervisor_.check(t)) {
           case SupervisorVerdict::CAMERA_LOST:
@@ -247,6 +269,7 @@ void IbvsStateMachine::onTimer()
         publishTwist(tracker_active_ && fresh ? servo_command_ : std::array<double, 6>{});
         break;
       }
+    case State::DONE:
     case State::FAILED:
       if (velocity_active_) {
         publishTwist({});
@@ -299,7 +322,9 @@ void IbvsStateMachine::onStart(
   const std::shared_ptr<std_srvs::srv::Trigger::Request>,
   std::shared_ptr<std_srvs::srv::Trigger::Response> response)
 {
-  if (state_ != State::IDLE && state_ != State::SERVO && state_ != State::FAILED) {
+  if (state_ != State::IDLE && state_ != State::SERVO && state_ != State::DISPENSE &&
+    state_ != State::DONE && state_ != State::FAILED)
+  {
     response->success = false;
     response->message = std::string("not accepted in state ") + toString(state_);
     return;
@@ -471,7 +496,12 @@ void IbvsStateMachine::tickApproach()
     tracker_active_ = false;
     converged_reported_ = false;
     supervisor_.start(now().seconds());
-    transitionTo(State::SERVO);
+    if (params_.dispense_enabled) {
+      beginDispense(*world_T_cam);
+      transitionTo(State::DISPENSE);
+    } else {
+      transitionTo(State::SERVO);
+    }
     return;
   }
   publishTwist(command.twist);
@@ -524,7 +554,7 @@ void IbvsStateMachine::handleServo(const cv::Mat & bgr)
         "could not find the edge (missing for %.1f s, giving up after %.1f s)",
         supervisor_.secondsEdgeMissing(t), params_.edge_lost_timeout_sec);
     }
-    publishServoDebug(bgr, *distance, nullptr);
+    publishServoDebug(bgr, *K_, *distance, nullptr);
     return;
   }
 
@@ -534,7 +564,7 @@ void IbvsStateMachine::handleServo(const cv::Mat & bgr)
     converged_reported_ = false;
     supervisor_.onEdgeMissing(t);
     RCLCPP_WARN(get_logger(), "lost the edge; re-seeding from the panel pose");
-    publishServoDebug(bgr, *distance, nullptr);
+    publishServoDebug(bgr, *K_, *distance, nullptr);
     return;
   }
   supervisor_.onEdgeLocked();
@@ -551,7 +581,7 @@ void IbvsStateMachine::handleServo(const cv::Mat & bgr)
     params_.standoff_kp * standoff_error, -params_.standoff_max_speed, params_.standoff_max_speed);
   servo_command_ = command;
   servo_command_stamp_ = now();
-  publishServoDebug(bgr, *distance, &command);
+  publishServoDebug(bgr, *K_, *distance, &command);
 
   const bool converged = controller_->errorNorm() < params_.converged_threshold &&
     std::abs(standoff_error) < 0.005;
@@ -561,6 +591,168 @@ void IbvsStateMachine::handleServo(const cv::Mat & bgr)
       *distance);
   }
   converged_reported_ = converged;
+}
+
+void IbvsStateMachine::beginDispense(const cv::Matx44d & world_T_cam)
+{
+  // Counter-clockwise seen from above, starting on the followed edge: on the +y edge the
+  // travel is along -x of the panel, on the -y edge along +x.
+  const cv::Vec3d travel = (-params_.follow_edge_sign) * edge_.direction;
+  const cv::Vec3d in_camera = rotationOf(world_T_cam).t() * travel;
+  quarter_turns_ = quarterTurnsForDirection(in_camera[0], in_camera[1]);
+  leg_ = 0;
+  corner_frames_ = 0;
+  leg_origin_ = translationOf(world_T_cam);
+  pause_until_ = now();
+  servo_command_ = {};
+  last_line_.reset();
+  tracker_->setMinTrackedFraction(params_.dispense_min_tracked_fraction);
+  controller_->setLambda(params_.dispense_lambda);
+  RCLCPP_INFO(
+    get_logger(), "dispense lap: starting at %.0f deg of virtual camera rotation",
+    quarter_turns_ * 90.0);
+}
+
+bool IbvsStateMachine::seedVirtualEdge(
+  const cv::Mat & virtual_bgr, const cv::Matx33d & K, bool ahead, bool use_last_line)
+{
+  // The edge is held near the image centre row by the servo, so seeds on that row are
+  // enough in general; init() snaps them onto the real edge. After a loss the edge may be
+  // well away from that row (the part moved faster than the arm followed), and the last
+  // tracked line is the better guess.
+  const double w = virtual_bgr.cols;
+  const double near = 0.05 * w;
+  const double far = 0.40 * w;
+  const double col_a = ahead ? K(0, 2) + near : K(0, 2) - far;
+  const double col_b = ahead ? K(0, 2) + far : K(0, 2) - near;
+  const auto row_at = [&](double col) {
+      if (use_last_line && last_line_) {
+        // ViSP pixel convention: i cos(theta) + j sin(theta) = rho, i = row, j = column.
+        const double c = std::cos((*last_line_)[1]);
+        if (std::abs(c) > 0.5) {
+          return ((*last_line_)[0] - col * std::sin((*last_line_)[1])) / c;
+        }
+      }
+      return K(1, 2);
+    };
+  const cv::Point2d a(col_a, row_at(col_a));
+  const cv::Point2d b(col_b, row_at(col_b));
+  if (!tracker_->init(virtual_bgr, a, b)) {
+    return false;
+  }
+  const vpCameraParameters cam(K(0, 0), K(1, 1), K(0, 2), K(1, 2));
+  vpFeatureLine s;
+  tracker_->feature(cam, s);
+  controller_->matchPolarity(s.getTheta());
+  return true;
+}
+
+void IbvsStateMachine::handleDispense(const cv::Mat & bgr)
+{
+  const auto world_T_cam = lookup(params_.world_frame, params_.camera_frame);
+  if (!world_T_cam) {
+    return;
+  }
+  const auto distance = distanceToPanelPlane(*world_T_cam);
+  if (!distance) {
+    return;
+  }
+
+  // Everything below happens in the virtual camera of this leg, in which the edge is
+  // horizontal and the travel is towards +x.
+  const cv::Mat view = rotateImage(bgr, quarter_turns_);
+  const cv::Matx33d Kv = rotateIntrinsics(*K_, bgr.size(), quarter_turns_);
+  const vpCameraParameters cam(Kv(0, 0), Kv(1, 1), Kv(0, 2), Kv(1, 2));
+  const cv::Vec3d position = translationOf(*world_T_cam);
+  const double along = std::hypot(position[0] - leg_origin_[0], position[1] - leg_origin_[1]);
+  const std::string note = format(
+    "leg %d of 5, %.2f m along, virtual camera turned %d deg", leg_ + 1, along,
+    quarter_turns_ * 90);
+
+  const double t = now().seconds();
+  if (!tracker_active_) {
+    servo_command_ = {};
+    const bool ahead = along < kAheadSeedDistance;
+    if ((last_line_ && seedVirtualEdge(view, Kv, ahead, true)) ||
+      seedVirtualEdge(view, Kv, ahead, false))
+    {
+      tracker_active_ = true;
+      supervisor_.onEdgeLocked();
+      RCLCPP_INFO(get_logger(), "edge locked (%d tracked points)", tracker_->trackedPoints());
+    } else {
+      supervisor_.onEdgeMissing(t);
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "could not find the edge (missing for %.1f s, giving up after %.1f s)",
+        supervisor_.secondsEdgeMissing(t), params_.edge_lost_timeout_sec);
+    }
+    publishServoDebug(view, Kv, *distance, nullptr, note);
+    return;
+  }
+
+  if (!tracker_->track(view)) {
+    tracker_active_ = false;
+    servo_command_ = {};
+    supervisor_.onEdgeMissing(t);
+    RCLCPP_WARN(get_logger(), "lost the edge; re-seeding");
+    publishServoDebug(view, Kv, *distance, nullptr, note);
+    return;
+  }
+  supervisor_.onEdgeLocked();
+  last_line_ = tracker_->rhoTheta();
+
+  vpFeatureLine s;
+  tracker_->feature(cam, s);
+  auto command = controller_->computeTwist(s.getRho(), s.getTheta(), *distance);
+  // Across the edge and about the optical axis: IBVS. Along the edge: the pre-programmed
+  // speed (not while a corner has just been turned). Standoff: from the TF distance.
+  const bool paused = now() < pause_until_;
+  command[0] = paused ? 0.0 : params_.dispense_speed;
+  const double standoff_error = *distance - params_.servo_standoff;
+  command[2] = std::clamp(
+    params_.standoff_kp * standoff_error, -params_.standoff_max_speed, params_.standoff_max_speed);
+  servo_command_ = twistFromVirtual(command, quarter_turns_);
+  servo_command_stamp_ = now();
+  publishServoDebug(view, Kv, *distance, &command, note);
+
+  // End of the lap: half of the starting edge after the fourth corner.
+  if (leg_ >= 4) {
+    if (along >= 0.5 * params_.panel_length) {
+      RCLCPP_INFO(get_logger(), "dispense lap complete");
+      servo_command_ = {};
+      tracker_active_ = false;
+      publishTwist({});
+      transitionTo(State::DONE);
+    }
+    return;
+  }
+
+  // Has the camera reached the corner at the end of this side?
+  if (along < params_.corner_min_leg_distance) {
+    return;
+  }
+  const cv::Vec2d rho_theta = tracker_->rhoTheta();
+  const auto corner = corner_finder_->find(
+    view, rho_theta[0], rho_theta[1], Kv(0, 2) - 0.25 * view.cols);
+  if (corner && *corner <= Kv(0, 2) + params_.corner_tolerance_px) {
+    ++corner_frames_;
+  } else {
+    corner_frames_ = 0;
+  }
+  if (corner_frames_ >= params_.corner_confirm_frames) {
+    RCLCPP_INFO(
+      get_logger(), "corner %d reached after %.2f m (corner at column %.0f, centre %.0f)",
+      leg_ + 1, along, *corner, Kv(0, 2));
+    ++leg_;
+    quarter_turns_ = (quarter_turns_ + 1) % 4;  // the lap is counter-clockwise
+    corner_frames_ = 0;
+    last_line_.reset();
+    leg_origin_ = position;
+    pause_until_ = now() + rclcpp::Duration::from_seconds(params_.corner_pause_sec);
+    tracker_active_ = false;
+    servo_command_ = {};
+    publishTwist({});
+  }
 }
 
 bool IbvsStateMachine::debugWanted() const {return debug_pub_->get_subscription_count() > 0;}
@@ -598,7 +790,8 @@ void IbvsStateMachine::publishSearchDebug(const cv::Mat & bgr, const PanelDetect
 }
 
 void IbvsStateMachine::publishServoDebug(
-  const cv::Mat & bgr, double distance, const std::array<double, 6> * command)
+  const cv::Mat & bgr, const cv::Matx33d & K, double distance,
+  const std::array<double, 6> * command, const std::string & note)
 {
   if (!debugWanted()) {
     return;
@@ -610,11 +803,11 @@ void IbvsStateMachine::publishServoDebug(
     // sin(theta*) is the polarity sign (+1 dark below the edge, -1 above). It is drawn
     // thick and underneath, and the tracked line thin on top, so both stay visible when
     // they coincide at convergence.
-    const vpCameraParameters cam((*K_)(0, 0), (*K_)(1, 1), (*K_)(0, 2), (*K_)(1, 2));
+    const vpCameraParameters cam(K(0, 0), K(1, 1), K(0, 2), K(1, 2));
     vpFeatureLine s;
     tracker_->feature(cam, s);
     const double polarity = s.getTheta() >= 0.0 ? 1.0 : -1.0;
-    const double row = (*K_)(1, 2) + (*K_)(1, 1) * params_.desired_rho / polarity;
+    const double row = K(1, 2) + K(1, 1) * params_.desired_rho / polarity;
     cv::line(
       image, cv::Point(0, cvRound(row)), cv::Point(image.cols, cvRound(row)), kCyan, 7, cv::LINE_AA);
     for (const auto & p : tracker_->sitePixels()) {
@@ -632,6 +825,9 @@ void IbvsStateMachine::publishServoDebug(
       controller_->errorNorm()), 2);
   }
   label(image, "red: tracked edge   cyan: desired edge   green: moving-edge points", 3);
+  if (!note.empty()) {
+    label(image, note, 4);
+  }
   publishDebugImage(image);
 }
 

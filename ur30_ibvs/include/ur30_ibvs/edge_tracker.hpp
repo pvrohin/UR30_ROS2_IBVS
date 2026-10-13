@@ -48,6 +48,12 @@ public:
   bool track(const cv::Mat & image);
 
   bool isTracking() const {return tracking_;}
+
+  // Tracking counts as lost below this share of the initial points. Takes effect on the
+  // next track(); the dispense lap lowers it because half the points are gone when the
+  // camera reaches a corner.
+  void setMinTrackedFraction(double fraction) {params_.min_tracked_fraction = fraction;}
+
   int trackedPoints() const;
 
   // Pixels (x, y) of the moving-edge points that are currently tracked, for drawing.

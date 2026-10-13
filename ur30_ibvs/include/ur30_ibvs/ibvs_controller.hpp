@@ -44,6 +44,8 @@ public:
   // non-finite measurement.
   std::array<double, 6> computeTwist(double rho, double theta, double distance);
 
+  void setLambda(double lambda) {task_.setLambda(lambda);}
+
   // Norm of the feature error at the last computeTwist().
   double errorNorm() const {return error_norm_;}
 

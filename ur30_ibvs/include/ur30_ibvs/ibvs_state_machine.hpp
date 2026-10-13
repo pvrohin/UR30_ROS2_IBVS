@@ -21,11 +21,13 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
+#include "ur30_ibvs/corner_finder.hpp"
 #include "ur30_ibvs/edge_tracker.hpp"
 #include "ur30_ibvs/ibvs_controller.hpp"
 #include "ur30_ibvs/panel_detector.hpp"
 #include "ur30_ibvs/panel_geometry.hpp"
 #include "ur30_ibvs/servo_supervisor.hpp"
+#include "ur30_ibvs/virtual_view.hpp"
 
 namespace ur30_ibvs
 {
@@ -40,6 +42,8 @@ enum class State
   SWITCH_CONTROL,  // hand the joints from the trajectory to the velocity controller
   APPROACH,        // look-then-move: steer to the point above the chosen long edge
   SERVO,           // vpMeLine + vpServo on that edge, holding the standoff
+  DISPENSE,        // slide round the whole boundary, IBVS holding the edge at every side
+  DONE,            // the lap is complete: zero twists, stay put
   FAILED           // zero twists, stay put
 };
 
@@ -87,6 +91,17 @@ private:
     // Give up (FAILED) when the edge has been missing this long, or no image has
     // arrived for this long, while servoing.
     double edge_lost_timeout_sec, image_timeout_sec;
+
+    // Dispense lap. false: APPROACH is followed by SERVO (hold above the edge).
+    bool dispense_enabled;
+    double dispense_speed;  // feed-forward speed along the edge [m/s]
+    CornerFinderParams corner;
+    double corner_tolerance_px;  // corner counts as reached this close to the image centre
+    int corner_confirm_frames;  // ... on this many frames in a row
+    double corner_pause_sec;  // no sliding for this long after turning a corner
+    double corner_min_leg_distance;  // [m] travelled on a leg before a corner is looked for
+    double dispense_min_tracked_fraction;
+    double dispense_lambda;  // servo gain on the lap (the part moves, so higher than SERVO)
   };
 
   Params loadParams();
@@ -106,6 +121,14 @@ private:
   void beginSwitchControl();
   void tickApproach();
   void handleServo(const cv::Mat & bgr);
+  void beginDispense(const cv::Matx44d & world_T_cam);
+  void handleDispense(const cv::Mat & bgr);
+  // Seeds on the (virtual) image: ahead of the image centre right after a corner,
+  // behind it otherwise (the edge there has just been tracked).
+  // use_last_line: put the seeds on the line that was tracked last (rather than on the
+  // image centre row), which is closer when the part has moved away from the centre.
+  bool seedVirtualEdge(
+    const cv::Mat & virtual_bgr, const cv::Matx33d & K, bool ahead, bool use_last_line);
   bool seedEdgeTracker(const cv::Mat & bgr, const cv::Matx44d & world_T_cam);
 
   // Annotated copies of the camera image on ~/debug_image, built only while someone
@@ -115,7 +138,8 @@ private:
   void publishDebugImage(const cv::Mat & annotated);
   void publishSearchDebug(const cv::Mat & bgr, const PanelDetection * detection);
   void publishServoDebug(
-    const cv::Mat & bgr, double distance, const std::array<double, 6> * command);
+    const cv::Mat & bgr, const cv::Matx33d & K, double distance,
+    const std::array<double, 6> * command, const std::string & note = "");
 
   void transitionTo(State next);
   void fail(const std::string & reason);
@@ -133,6 +157,7 @@ private:
   std::unique_ptr<PanelDetector> detector_;
   std::unique_ptr<EdgeTracker> tracker_;
   std::unique_ptr<IbvsController> controller_;
+  std::unique_ptr<CornerFinder> corner_finder_;
 
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
@@ -169,6 +194,15 @@ private:
   bool converged_reported_ = false;
   std::array<double, 6> servo_command_{};
   rclcpp::Time servo_command_stamp_{0, 0, RCL_ROS_TIME};
+
+  // DISPENSE: the lap is 5 legs: half of the starting edge, three whole edges, and the
+  // other half of the starting edge.
+  int leg_ = 0;
+  int quarter_turns_ = 0;  // virtual camera of the current leg (travel is virtual +x)
+  int corner_frames_ = 0;
+  cv::Vec3d leg_origin_{0.0, 0.0, 0.0};  // camera position where the leg began
+  std::optional<cv::Vec2d> last_line_;  // (rho, theta) [px] tracked last on this leg
+  rclcpp::Time pause_until_{0, 0, RCL_ROS_TIME};
 };
 
 }  // namespace ur30_ibvs
