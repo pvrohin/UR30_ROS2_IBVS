@@ -72,9 +72,5 @@
     <xacro:table_leg name="${name}" lx="1" ly="-1" leg_size="${leg_size}" top_thickness="${top_thickness}" leg_length="${leg_length}" x_off="${x_off}" y_off="${y_off}"/>
     <xacro:table_leg name="${name}" lx="-1" ly="1" leg_size="${leg_size}" top_thickness="${top_thickness}" leg_length="${leg_length}" x_off="${x_off}" y_off="${y_off}"/>
     <xacro:table_leg name="${name}" lx="-1" ly="-1" leg_size="${leg_size}" top_thickness="${top_thickness}" leg_length="${leg_length}" x_off="${x_off}" y_off="${y_off}"/>
-
-    <gazebo reference="${name}_top_link">
-      <material>Gazebo/Wood</material>
-    </gazebo>
   </xacro:macro>
 </robot>

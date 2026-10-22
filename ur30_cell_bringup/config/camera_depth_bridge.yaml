@@ -1,0 +1,14 @@
+# Depth image and point cloud. Kept apart from camera_bridge.yaml because they are
+# by far the heaviest topics (the cloud is megabytes per message at 30 Hz), and the
+# IBVS pipeline uses neither. Enabled with the `bridge_depth` launch argument.
+- ros_topic_name: "camera/depth/image_raw"
+  gz_topic_name: "camera/depth_image"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "camera/depth/points"
+  gz_topic_name: "camera/points"
+  ros_type_name: "sensor_msgs/msg/PointCloud2"
+  gz_type_name: "gz.msgs.PointCloudPacked"
+  direction: GZ_TO_ROS

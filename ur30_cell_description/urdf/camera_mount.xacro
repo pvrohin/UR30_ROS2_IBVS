@@ -33,7 +33,10 @@
       <child link="camera_link"/>
     </joint>
 
-    <gazebo reference="camera_color_optical_frame">
+    <!-- Gazebo cameras look along the sensor's +X axis, so attach the sensor to
+         camera_color_frame (ROS body convention, +X forward). The optical
+         frame has +Z forward, and a sensor there would look sideways. -->
+    <gazebo reference="camera_color_frame">
       <sensor name="gemini_335_Lg_rgbd" type="rgbd_camera">
         <always_on>true</always_on>
         <update_rate>${update_rate}</update_rate>
@@ -62,17 +65,17 @@
 
     <!-- gz-sim has no SDF tag to set a sensor's published frame_id; it
          always uses "<model>/<lumped_link>/<sensor_name>". Because every
-         joint from wrist_3_link down to camera_color_optical_frame is
-         fixed, gz-sim's URDF to SDF conversion lumps this whole chain onto
-         wrist_3_link, so the RGBD sensor's messages carry frame_id
+         joint from wrist_3_link down to camera_color_frame is fixed, gz-sim's
+         URDF to SDF conversion lumps this whole chain onto wrist_3_link, so
+         the RGBD sensor's messages carry frame_id
          "$(arg name)/$(arg tf_prefix)wrist_3_link/gemini_335_Lg_rgbd", a
          frame robot_state_publisher never otherwise publishes. Add it here,
-         rigidly fixed to camera_color_optical_frame (same physical pose the
-         lumped sensor actually renders from), so TF/RViz can resolve it. -->
+         rigidly fixed to camera_color_frame (the frame the sensor is attached
+         to, so the same pose it renders from), so TF/RViz can resolve it. -->
     <link name="$(arg name)/$(arg tf_prefix)wrist_3_link/gemini_335_Lg_rgbd"/>
-    <joint name="camera_color_optical_frame_to_gz_sensor_frame" type="fixed">
+    <joint name="camera_color_frame_to_gz_sensor_frame" type="fixed">
       <origin xyz="0 0 0" rpy="0 0 0"/>
-      <parent link="camera_color_optical_frame"/>
+      <parent link="camera_color_frame"/>
       <child link="$(arg name)/$(arg tf_prefix)wrist_3_link/gemini_335_Lg_rgbd"/>
     </joint>
   </xacro:macro>

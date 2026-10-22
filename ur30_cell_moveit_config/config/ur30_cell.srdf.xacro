@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="ur30_cell">
+  <!-- Reuses the ur_type-agnostic SRDF from ur_moveit_config. It hardcodes
+       unprefixed link names (base_link ... tool0), so this only works while
+       tf_prefix stays empty. -->
+  <xacro:include filename="$(find ur_moveit_config)/srdf/ur_macro.srdf.xacro"/>
+  <xacro:ur_srdf/>
+</robot>

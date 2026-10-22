@@ -1,0 +1,26 @@
+# Augments the position/velocity/effort limits that already come from the
+# URDF (built from ur_description's ur30 config). MoveIt/Servo additionally
+# need acceleration limits, which the UR does not publish, so these are
+# conservative values copied from ur_moveit_config.
+#
+# Do NOT point this at ur_description's config/ur30/joint_limits.yaml: that
+# file uses xacro-only `!degrees` YAML tags MoveIt's loader cannot parse.
+joint_limits:
+  shoulder_pan_joint:
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  shoulder_lift_joint:
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  elbow_joint:
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  wrist_1_joint:
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  wrist_2_joint:
+    has_acceleration_limits: true
+    max_acceleration: 5.0
+  wrist_3_joint:
+    has_acceleration_limits: true
+    max_acceleration: 5.0

@@ -1,0 +1,133 @@
+ibvs_state_machine:
+  ros__parameters:
+    # ---- interfaces -------------------------------------------------------
+    image_topic: /camera/color/image_raw
+    camera_info_topic: /camera/color/camera_info
+    twist_topic: /servo_node/delta_twist_cmds
+    world_frame: world
+    command_frame: tool0
+    camera_frame: camera_color_optical_frame
+    jtc_action: /joint_trajectory_controller/follow_joint_trajectory
+    position_controller: joint_trajectory_controller
+    velocity_controller: forward_velocity_controller
+    control_rate_hz: 50.0  # Servo drops twists older than 0.1 s, keep well above 10 Hz
+    # A SERVO command older than this (no new image) is replaced by a zero twist.
+    stale_command_sec: 0.25
+    # Once every dependency is up (TF, camera, controllers, Servo) the node holds still this
+    # long before moving the arm, so the cell can be looked at in Gazebo and RViz first.
+    # Counted in simulation time. 0 starts at once.
+    start_delay_sec: 5.0
+    joint_names:
+      [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint,
+        wrist_3_joint]
+
+    # ---- stage 1: SEARCH --------------------------------------------------
+    # Verified in sim: camera optical frame at world (0.8, 0, 1.405), looking
+    # straight down, image +x along world +X, Jacobian condition number ~10.5.
+    survey_joint_positions: [-0.2619, -1.3611, 0.9311, -1.1408, -1.5708, -0.2619]
+    survey_duration_sec: 6.0
+
+    # Real panel outline (door_panel.xacro); PnP object frame is the centre of
+    # the top face, x along the length, y along the width, z = 0 on the face.
+    panel_length: 0.9
+    panel_width: 0.55
+    # World z of the panel's top face: table top 0.75 + panel offset 0.04 + half
+    # the 0.03 thickness (ur30_cell.xacro, door_panel.xacro). The corners are
+    # back-projected onto this plane, so it must match the cell.
+    panel_top_height: 0.805
+
+    # Brightest-channel value below which a pixel counts as panel. Measured on
+    # a real frame at the survey pose: panel 107, armrest 83, speaker 59,
+    # table 197, so 150 sits midway between panel and table. Re-measure if the
+    # scene colours or lighting change. The other thresholds are unchanged
+    # initial guesses that the same frame satisfied (area fraction 0.61).
+    dark_threshold: 150
+    min_area_fraction: 0.35  # of image area; expected ~0.61 at the 0.6 m survey
+    max_area_fraction: 0.85
+    min_rectangularity: 0.85  # blob area / its min-area rectangle, rejects merged blobs
+    aspect_tolerance: 0.2  # relative error on panel_length / panel_width
+    max_reprojection_px: 3.0
+    # Direction the panel x axis should point in the image (0 = image right,
+    # clockwise positive). A rectangle looks the same after a 180 degree turn,
+    # so this alone decides which long edge is +y. At the survey pose the panel
+    # is unrotated in the world, so its x axis points along image +x.
+    expected_x_axis_angle_deg: 0.0
+    consecutive_detections: 10  # debounce before committing to APPROACH
+    search_timeout_sec: 30.0  # give up (FAILED) if the panel is not found in this time
+    # A detection is rejected unless the back-projected panel is this close to the
+    # known size, and the PnP depth agrees with the camera height from TF.
+    size_tolerance_m: 0.03
+    depth_consistency_m: 0.03
+
+    # ---- stage 2: APPROACH (look-then-move, TF based) --------------------
+    # Which long edge to follow: +1 -> the edge at +panel_width/2 in the panel
+    # frame, -1 -> the one at -panel_width/2.
+    follow_edge_sign: 1.0
+    # Camera height above the panel top face at the end of APPROACH. At 0.2 m
+    # the image covers only ~0.40 x 0.23 m, so exactly one long edge is visible.
+    servo_standoff: 0.20
+    approach_kp: 1.0  # [1/s]
+    approach_max_speed: 0.05  # [m/s]
+    approach_max_rot_speed: 0.1  # [rad/s]
+    approach_tolerance: 0.01  # [m] position error at which SERVO starts
+    approach_rot_tolerance: 0.03  # [rad] orientation error at which SERVO starts
+    approach_timeout_sec: 90.0  # FAILED if the target is not reached in this time
+
+    # ---- stage 3: SERVO (vpMeLine + vpFeatureLine IBVS) ------------------
+    servo_lambda: 0.6
+    # Desired line in normalised image coordinates: horizontal (edge along the
+    # image x axis) and passing through the image centre. theta is +pi/2 when
+    # the dark panel is BELOW the edge in the image and -pi/2 when it is above
+    # (the sign of rho flips too), so the state machine must take the sign from
+    # the measured feature at init. Confirmed on a real rendered close-up above
+    # the +y edge: feature (rho, theta) = (-0.0015, +1.5708), dark below.
+    desired_rho: 0.0
+    desired_theta: 1.5708
+    standoff_kp: 1.0  # [1/s] holds servo_standoff; a single line cannot constrain it
+    standoff_max_speed: 0.03  # [m/s]
+    slide_speed: 0.0  # [m/s] along the edge; 0 holds position. Mind the 0.9 m edge length.
+    # Feature error norm reported as "converged". MoveIt Servo ignores twists below
+    # ~0.5-1 mm/s (measured: 1 mm/s moves the arm, 0.5 mm/s does not), so the loop
+    # stalls with rho off by up to ~0.008 (about 1 mm at the 0.2 m standoff). 0.01
+    # is just outside that; the first end-to-end run settled within ~1 mm.
+    converged_threshold: 0.01
+    # While servoing, the node gives up (FAILED, zero twists) when the edge has been
+    # missing for this long, or when no image has arrived for this long. Both are
+    # durations rather than frame counts, so they do not depend on the camera rate
+    # or on dropped frames. While the edge is missing it is re-seeded from the panel
+    # pose on every frame.
+    edge_lost_timeout_sec: 2.0
+    image_timeout_sec: 2.0
+
+    # Moving-edges tracker (vpMe, NORMALIZED_THRESHOLD). Initial guesses, but
+    # they tracked a real close-up frame with 217 points.
+    me_range: 10  # [px] search either side of the line while tracking
+    me_sample_step: 5.0  # [px] between tracked points
+    me_threshold: 20.0  # minimum luminance contrast of an edge, 0-255
+    # ViSP's init needs the seed ON the edge (4 px off already fails), so the
+    # seed, projected from an estimated pose, is first snapped to the strongest
+    # edge within this distance. 50 px is ~1.5 cm at the 0.2 m standoff.
+    edge_snap_radius: 50.0
+    edge_min_tracked_fraction: 0.5  # below this share of the initial points, tracking is lost
+
+    # ---- stage 4: DISPENSE (a lap round the boundary, replaces holding in SERVO) -------
+    # The lap is counter-clockwise, starting on the followed edge: half of it, the three
+    # other sides, and the other half. The camera keeps its heading; on each side the image
+    # is turned by a multiple of 90 degrees (a "virtual camera") so that the edge looks
+    # horizontal and the travel goes to the image right, which is what the controller
+    # expects. Across the edge and the yaw are IBVS; along the edge it is the speed below.
+    dispense_enabled: false  # the launch file's demo:=true turns it on
+    dispense_speed: 0.03  # [m/s] along the edge (the pre-programmed part of the path)
+    # The corner is read from a strip parallel to the edge, this far on the part side [px].
+    corner_strip_offset_px: 10.0
+    corner_bright_run_px: 6  # the part has ended after this many bright pixels in a row
+    # A corner counts as reached when it is this close to the image centre (or past it) on
+    # corner_confirm_frames frames in a row. At 0.2 m one pixel is ~0.3 mm.
+    corner_tolerance_px: 6.0
+    corner_confirm_frames: 2
+    corner_pause_sec: 0.5  # no sliding for this long after turning a corner
+    corner_min_leg_distance: 0.08  # [m] on a new side before a corner is looked for
+    # Half the moving-edge points are gone when the camera is over the corner, so the
+    # "tracking lost" share is lower than in SERVO.
+    dispense_min_tracked_fraction: 0.3
+    dispense_lambda: 1.5  # servo gain on the lap; the part may move, see ur30_ibvs_demo.yaml

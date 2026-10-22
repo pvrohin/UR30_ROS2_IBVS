@@ -13,6 +13,9 @@
   <xacro:arg name="safety_k_position" default="20"/>
   <xacro:arg name="simulation_controllers" default=""/>
   <xacro:arg name="ros_namespace" default=""/>
+  <!-- false leaves the door panel out of this model, for runs that spawn it as its own
+       movable model (see door_panel_model.xacro). -->
+  <xacro:arg name="include_panel" default="true"/>
 
   <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
   <xacro:include filename="$(find ur_simulation_gz)/urdf/ur_gz.ros2_control.xacro"/>
@@ -49,10 +52,12 @@
   </xacro:workcell_table>
 
   <!-- Door panel fixtured on the table top, slightly toward the arm. -->
-  <xacro:door_panel parent="table_top_link" name="door_panel"
-      panel_length="0.9" panel_width="0.55" panel_thickness="0.03">
-    <origin xyz="-0.1 0 0.04" rpy="0 0 0"/>
-  </xacro:door_panel>
+  <xacro:if value="$(arg include_panel)">
+    <xacro:door_panel parent="table_top_link" name="door_panel"
+        panel_length="0.9" panel_width="0.55" panel_thickness="0.03">
+      <origin xyz="-0.1 0 0.04" rpy="0 0 0"/>
+    </xacro:door_panel>
+  </xacro:if>
 
   <!-- Eye-in-hand Orbbec Gemini 335Lg on the UR30 flange. -->
   <xacro:eye_in_hand_camera parent="$(arg tf_prefix)tool0" camera_topic="camera"/>
