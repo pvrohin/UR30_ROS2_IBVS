@@ -16,8 +16,9 @@ The cell contains:
 The panel and table are simple primitives. No external meshes are needed except
 the UR and Orbbec ones.
 
-This is the `main` branch: the cell only. The visual servoing work (ViSP IBVS)
-is on a separate branch, see [Visual servoing branch](#visual-servoing-branch).
+On top of the cell sits the visual servoing work: ViSP image-based visual servoing (IBVS)
+that finds the panel, follows its edge, and can dispense a lap around its boundary while the
+part is nudged at random. See [Visual servoing](#visual-servoing).
 
 ## Repository layout
 
@@ -25,6 +26,8 @@ is on a separate branch, see [Visual servoing branch](#visual-servoing-branch).
 |---|---|
 | `ur30_cell_description/` | The cell's xacro: pedestal, table, door panel, camera mount, and `ur30_cell.xacro` that assembles them. |
 | `ur30_cell_bringup/` | Launch file, RViz config, Gazebo world and camera bridge config. |
+| `ur30_cell_moveit_config/` | MoveIt Servo setup (SRDF, kinematics, joint limits, Servo parameters, launch) used to send Cartesian twists to the arm. No `move_group`. |
+| `ur30_ibvs/` | The IBVS package: panel detector, edge tracker, controller, state machine, dispense lap, part shifter and tests. Has its own [README](ur30_ibvs/README.md). |
 | `ur_description_gz/` | Vendored `Universal_Robots_ROS2_Description` (ROS package name `ur_description`). |
 | `ur_simulation_gz/` | Vendored `Universal_Robots_ROS2_GZ_Simulation`. |
 | `orbbec_description/` | Vendored `orbbec_description` from `OrbbecSDK_ROS2` (URDF and meshes only). |
@@ -77,7 +80,8 @@ sudo apt install \
   ros-jazzy-ros-gz-sim ros-jazzy-ros-gz-bridge ros-jazzy-gz-ros2-control \
   ros-jazzy-ros2-control ros-jazzy-ros2-controllers \
   ros-jazzy-joint-state-broadcaster ros-jazzy-joint-trajectory-controller \
-  ros-jazzy-robot-state-publisher ros-jazzy-xacro ros-jazzy-rviz2
+  ros-jazzy-robot-state-publisher ros-jazzy-xacro ros-jazzy-rviz2 \
+  ros-jazzy-moveit-servo ros-jazzy-visp
 cd ~/ur_ws_ah
 source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths src --ignore-src -r -y   # picks up anything missing
@@ -87,7 +91,7 @@ rosdep install --from-paths src --ignore-src -r -y   # picks up anything missing
 
 ```bash
 cd ~/ur_ws_ah
-colcon build --symlink-install --packages-up-to ur30_cell_bringup --allow-overriding ur_description
+colcon build --symlink-install --allow-overriding ur_description
 source install/setup.bash
 ```
 
@@ -105,6 +109,8 @@ This starts Gazebo with the cell, `robot_state_publisher`, the ros2_control
 controllers (`joint_state_broadcaster`, then `joint_trajectory_controller`), the
 camera bridge and RViz. RViz shows the robot model, TF and the camera images.
 
+To run only the cell without the vision packages, build with `--packages-up-to ur30_cell_bringup`.
+
 ## Geometry (world frame)
 
 | Item | Pose |
@@ -114,43 +120,51 @@ camera bridge and RViz. RViz shows the robot model, TF and the camera images.
 | Table top centre | (0.9, 0, 0.75) |
 | Door panel centre | (0.8, 0, 0.79), top face at z = 0.805 |
 
-## Known problems on this branch
+## Known problems
 
-- **The simulated camera looks sideways.** The Gazebo sensor is attached to
-  `camera_color_optical_frame`, but Gazebo cameras look along the sensor's +X
-  axis, so the image shows the floor and horizon instead of the table. Fixed on
-  `custom_ur30_visp` (attach the sensor to `camera_color_frame`).
-- Depth and point cloud are bridged at 30 Hz. This costs a lot of CPU and makes
-  the camera stall on modest machines. The branch below makes it optional.
+- Depth and point cloud are not bridged by default (they cost a lot of CPU at 30 Hz and the
+  IBVS pipeline does not use them). Pass `bridge_depth:=true` to `ur30_cell.launch.py` to enable them.
 - The vendored repositories are not set up as real submodules (see above).
-- `CLAUDE.md` still describes an earlier layout (`ur_description.gz`, an
-  unversioned workspace root). Treat it as out of date.
+- Only verified in headless Gazebo. The Gazebo and RViz GUIs were only partly exercised, and real
+  hardware has **not** been tested.
 
-## Visual servoing branch
+## Visual servoing
 
 ![IBVS demo: the UR30 surveys the table, approaches the door panel and servos on its edge](docs/IBVS.gif)
 
-Image-based visual servoing (IBVS) with [ViSP](https://github.com/lagadic/visp)
-lives on the branch `custom_ur30_visp`, not on `main`. It adds:
+[ViSP](https://github.com/lagadic/visp) IBVS lives in two packages:
 
-- `ur30_ibvs`: a C++ node that surveys the table, detects the door panel,
-  approaches it, then tracks one long edge with ViSP (`vpMeLine`, `vpServo`) at
-  0.2 m standoff. It has unit tests and a debug image topic.
-- `ur30_cell_moveit_config`: MoveIt Servo configuration, used to send twists to
-  the arm.
-- the camera fix and the optional depth bridge mentioned above.
+- `ur30_ibvs`: a C++ node that surveys the table, detects the door panel, approaches it, then
+  tracks one long edge with ViSP (`vpMeLine`, `vpServo`) at 0.2 m standoff. With
+  `dispense_enabled` it goes on to trace the whole panel boundary (the "dispense lap"), turning
+  each corner by rotating the camera image, and a `part_shifter` node moves the part by up to
+  2 cm / 2 deg at random during the lap to show lateral tracking. It has unit tests and a debug
+  image topic. Details, parameters and results are in [`ur30_ibvs/README.md`](ur30_ibvs/README.md).
+- `ur30_cell_moveit_config`: the MoveIt Servo configuration used to turn twists into joint
+  velocities for `forward_velocity_controller`.
 
 ```bash
-git checkout custom_ur30_visp
-# ...repeat the vendored-repo setup if not done yet, install ros-jazzy-visp and ros-jazzy-moveit-servo
 colcon build --symlink-install --allow-overriding ur_description
+source install/setup.bash
+
+# hold 0.2 m above the +y edge of the panel
 ros2 launch ur30_ibvs ur30_ibvs.launch.py
+
+# dispense lap with random part nudges
+ros2 launch ur30_ibvs ur30_ibvs.launch.py demo:=true
+
+# clean lap, no nudges
+ros2 launch ur30_ibvs ur30_ibvs.launch.py demo:=true shifts:=false
+
+# headless
+ros2 launch ur30_ibvs ur30_ibvs.launch.py demo:=true gazebo_gui:=false launch_rviz:=false
 ```
 
-Status: verified end to end in headless Gazebo (the panel is found at its true
-pose and the camera settles within about 1 mm of the target), and the failure
-paths were tested. The Gazebo and RViz GUIs and real hardware have **not** been
-tested.
+Tests: `colcon test --packages-select ur30_ibvs` (92 tests).
+
+Status: in headless Gazebo the panel is found at its true pose, the camera settles within about
+1 mm of the target when holding, and the dispense lap closes with a settled boundary error of
+about 3-7 mm under nudges (see `ur30_ibvs/README.md`).
 
 ## License
 

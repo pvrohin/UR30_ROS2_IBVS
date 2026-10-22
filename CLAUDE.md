@@ -11,12 +11,25 @@ See `README.md` for setup and run instructions.
 Version control: the workspace root (`/home/pvrohin/ur_ws_ah`) is unversioned, but `src/` is itself the
 git repo (`https://github.com/pvrohin/UR30_ROS2_IBVS`). Run git commands from `src/`.
 
-Five directories live under `src/`:
+Seven directories live under `src/`:
 
 - **`ur30_cell_description/`** (ROS package `ur30_cell_description`, ours) — xacro for the cell:
   `pedestal.xacro`, `table.xacro`, `door_panel.xacro`, `camera_mount.xacro`, assembled by `ur30_cell.xacro`.
 - **`ur30_cell_bringup/`** (ROS package `ur30_cell_bringup`, ours) — `launch/ur30_cell.launch.py`,
   `worlds/ur30_cell.world.sdf`, `config/camera_bridge.yaml`, `rviz/ur30_cell.rviz`.
+- **`ur30_cell_moveit_config/`** (ROS package, ours) — MoveIt Servo setup only (no `move_group`):
+  `config/{ur30_cell.srdf.xacro,kinematics.yaml,joint_limits.yaml,ur30_cell_servo.yaml}` and
+  `launch/ur30_cell_servo.launch.py`. Servo writes velocities to `/forward_velocity_controller/commands`.
+  Servo smoothing is off (`use_smoothing: false`), so callers must limit their own twist rates.
+- **`ur30_ibvs/`** (ROS package, ours, C++ with ViSP/OpenCV) — image-based visual servoing. Library classes
+  in `include/ur30_ibvs` + `src`: `PanelDetector`, `EdgeTracker` (`vpMeLine`), `IbvsController`
+  (`vpServo`), `panel_geometry`, `ServoSupervisor`, `virtual_view` (image rotated by k x 90 deg so the
+  followed edge is always horizontal), `CornerFinder`; `IbvsStateMachine` is the node
+  (`ibvs_node`, name `ibvs_state_machine`) with states WAIT_READY, IDLE, RESETTING, GO_TO_SURVEY, SEARCH,
+  SWITCH_CONTROL, APPROACH, SERVO, DISPENSE, DONE, FAILED. `scripts/` has `ibvs_test_runner.py` (random panel
+  poses, back-to-back test cases) and `part_shifter.py` (nudges the part during DISPENSE and scores the error;
+  uses `gz service .../set_pose`, simulation only). Config: `config/ur30_ibvs.yaml` (defaults) and
+  `ur30_ibvs_demo.yaml` (lap overrides: panel rotated 90 deg, wrist_3 survey -1.8327). See `ur30_ibvs/README.md`.
 - **`ur_description_gz/`** (ROS package name **`ur_description`**) — vendored
   `UniversalRobots/Universal_Robots_ROS2_Description`, branch `jazzy`, pinned at `3924298`.
 - **`ur_simulation_gz/`** (ROS package `ur_simulation_gz` lives one level down, in
@@ -32,16 +45,18 @@ asked; put cell-specific changes in `ur30_cell_*`.
 
 `build/`, `install/`, and `log/` are colcon-generated output — never hand-edit files there.
 
-The `custom_ur30_visp` branch adds `ur30_ibvs` and `ur30_cell_moveit_config` (ViSP IBVS with MoveIt Servo)
-and fixes that are not on `main`. Its `CLAUDE.md`/README may differ; check which branch you are on.
+`main` contains everything: the cell, `ur30_cell_moveit_config` and `ur30_ibvs`. The feature branches
+`custom_ur_30_sim`, `custom_ur30_visp` and `dispense_lap` are all merged into `main` and kept for history.
 
 ## Common commands
 
 Build (from workspace root, `/home/pvrohin/ur_ws_ah`):
 ```bash
-colcon build --symlink-install --packages-up-to ur30_cell_bringup --allow-overriding ur_description
+colcon build --symlink-install --allow-overriding ur_description
 source install/setup.bash
 ```
+Add `--packages-up-to ur30_cell_bringup` for the cell only; the vision packages also need
+`ros-jazzy-moveit-servo` and `ros-jazzy-visp`.
 
 `--allow-overriding ur_description` is required: a system `ros-jazzy-ur-description` can coexist with the
 vendored copy, which has the same package name. If colcon complains about a renamed or stale package,
@@ -58,7 +73,21 @@ Launch arguments: `ur_type` (default `ur30`; the cell geometry is sized for its 
 `controllers_file`, `initial_joint_controller` (default `joint_trajectory_controller`),
 `activate_joint_controller`, `tf_prefix`, `safety_*`.
 
-Tests exist only in the vendored packages; the cell packages have none. To run them, source the workspace, then:
+`ur30_ibvs` has gtests (C++) and pytests (92 in total); the cell packages have none:
+```bash
+colcon test --packages-select ur30_ibvs && colcon test-result --verbose
+```
+Vision demo (Gazebo + Servo + IBVS node):
+```bash
+ros2 launch ur30_ibvs ur30_ibvs.launch.py                        # hold 0.2 m above the +y edge
+ros2 launch ur30_ibvs ur30_ibvs.launch.py demo:=true             # dispense lap + random part nudges
+ros2 launch ur30_ibvs ur30_ibvs.launch.py demo:=true shifts:=false gazebo_gui:=false launch_rviz:=false
+```
+Other args: `test_cases`, `test_seed`, `shift_seed`, `bridge_depth`, `run_ibvs`. With `demo` or `test_cases`
+the panel is spawned as a separate model (`door_panel_test`, `include_panel:=false` on the cell launch) so it
+can be moved. Do not run `pkill -f` with a pattern that also matches your own shell command.
+
+Tests of the vendored packages: source the workspace, then:
 ```bash
 colcon test --packages-select ur_description ur_simulation_gz
 colcon test-result --verbose
@@ -95,9 +124,8 @@ so **only one camera can exist per model**. Also note gz-sim behaviour that shap
 - gz-sim lumps fixed-joint chains onto the parent moving link and stamps sensor messages with
   `frame_id` `<model>/<lumped_link>/<sensor>` (here `ur30_cell/wrist_3_link/gemini_335_Lg_rgbd`). A
   zero-offset link with that name is added to the URDF so TF/RViz can resolve it.
-- Gazebo cameras look along the **sensor's +X axis**. On `main` the sensor is attached to
-  `camera_color_optical_frame` (+Z forward), so the simulated camera looks sideways. This is fixed on
-  `custom_ur30_visp` (sensor on `camera_color_frame`). Keep this in mind before trusting `main`'s images.
+- Gazebo cameras look along the **sensor's +X axis**, so the sensor is attached to `camera_color_frame`
+  (+X forward), not `camera_color_optical_frame` (+Z forward), which would look sideways.
 - `<gazebo><material>Gazebo/...</material>` tags in the xacro are classic-Gazebo syntax that gz-sim does not
   honour properly.
 
@@ -110,8 +138,8 @@ so **only one camera can exist per model**. Also note gz-sim behaviour that shap
 - `robot_state_publisher` (sim time),
 - Gazebo via `ros_gz_sim`'s `gz_sim.launch.py` with the world file, and `create` to spawn the robot from the
   URDF string,
-- a `/clock` bridge and a camera bridge (`config/camera_bridge.yaml`: color image, depth image, points,
-  camera_info),
+- a `/clock` bridge and a camera bridge (`config/camera_bridge.yaml`: color image and camera_info; depth and
+  points are in `config/camera_depth_bridge.yaml`, only with `bridge_depth:=true`),
 - `joint_state_broadcaster`, then RViz once the broadcaster spawner exits, and the initial joint controller
   (`joint_trajectory_controller`) as active or stopped depending on `activate_joint_controller`.
 
@@ -127,6 +155,16 @@ If the launch file is changed to include Servo/other stacks, both must expand th
 
 ### Camera topics
 
-`/camera/color/image_raw`, `/camera/depth/image_raw`, `/camera/depth/points`, `/camera/color/camera_info`.
-Depth and points at 30 Hz are expensive (tens of percent of a CPU and camera frame stalls on modest
-machines); `custom_ur30_visp` makes them an optional separate bridge.
+`/camera/color/image_raw` and `/camera/color/camera_info` always; `/camera/depth/image_raw` and
+`/camera/depth/points` only with `bridge_depth:=true`. Depth and points at 30 Hz are expensive (tens of
+percent of a CPU and camera frame stalls on modest machines), and the IBVS pipeline does not use them.
+
+### Vision stack (ur30_ibvs)
+
+`ur30_ibvs.launch.py` includes the cell launch and `ur30_cell_servo.launch.py`, spawns
+`forward_velocity_controller` inactive, and starts `ibvs_node`. The node switches between
+`joint_trajectory_controller` (survey, reset) and `forward_velocity_controller` (Servo twists) via
+`/controller_manager/switch_controller`. Twists go to `/servo_node/delta_twist_cmds`; Servo drops commands
+older than 0.1 s, so the node publishes at 50 Hz and sends a zero twist when no new image arrives.
+Servo ignores twists below roughly 0.5-1 mm/s, which limits the residual lateral error to about 1 mm.
+Pass `use_sim_time` consistently; all nodes here run on simulation time.
