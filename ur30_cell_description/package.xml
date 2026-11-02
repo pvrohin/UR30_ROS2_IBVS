@@ -13,8 +13,11 @@
   <exec_depend>urdf</exec_depend>
   <exec_depend>ur_description</exec_depend>
   <exec_depend>orbbec_description</exec_depend>
+  <!-- ur_simulation_gz (ur30_cell.xacro) is declared by ur30_cell_bringup, and ur_robot_driver
+       (ur30_cell_real.urdf.xacro) by ur30_real_bringup, so neither side pulls in the other. -->
 
   <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>ament_lint_auto</test_depend>
   <test_depend>liburdfdom-tools</test_depend>
   <test_depend>xacro</test_depend>
 

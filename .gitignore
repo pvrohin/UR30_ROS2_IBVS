@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# colcon, in case something is built from inside src/
+build/
+install/
+log/
+
+# Fetched by `vcs import` (see ur30.repos), or apt-installed
+ur_description_gz/
+ur_simulation_gz/
+orbbec_description/
+
+# Local deployment settings (see docker/.env.example)
+docker/.env
+
+# Recordings
+*.mcap
+*.db3

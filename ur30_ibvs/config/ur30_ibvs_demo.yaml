@@ -1,4 +1,4 @@
-# Overrides for the dispense lap demo (ur30_ibvs.launch.py demo:=true), loaded after
+# Overrides for the dispense lap demo (ur30_ibvs_sim.launch.py demo:=true), loaded after
 # ur30_ibvs.yaml.
 #
 # The lap goes round the whole panel, and with the 0.9 m side along world x its far end

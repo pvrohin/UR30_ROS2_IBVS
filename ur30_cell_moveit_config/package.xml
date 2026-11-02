@@ -11,6 +11,7 @@
 
   <exec_depend>moveit_servo</exec_depend>
   <exec_depend>moveit_configs_utils</exec_depend>
+  <exec_depend>launch_param_builder</exec_depend>
   <exec_depend>ur_moveit_config</exec_depend>
   <exec_depend>ur30_cell_description</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>

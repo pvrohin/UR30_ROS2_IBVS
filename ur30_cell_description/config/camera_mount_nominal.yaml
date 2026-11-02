@@ -1,0 +1,5 @@
+# tool0 -> camera_link. These are the simulation's placeholder values, NOT a real mount.
+# Replace them with the CAD transform, then with the hand-eye calibration result: copy this
+# file to /etc/ur30/camera_mount.yaml on the robot computer and edit it there.
+xyz: "0 0 0.01"
+rpy: "0 -1.5708 0"

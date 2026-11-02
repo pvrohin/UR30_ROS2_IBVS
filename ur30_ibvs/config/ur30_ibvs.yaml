@@ -25,7 +25,9 @@ ibvs_state_machine:
     # Verified in sim: camera optical frame at world (0.8, 0, 1.405), looking
     # straight down, image +x along world +X, Jacobian condition number ~10.5.
     survey_joint_positions: [-0.2619, -1.3611, 0.9311, -1.1408, -1.5708, -0.2619]
-    survey_duration_sec: 6.0
+    survey_duration_sec: 6.0  # the shortest the survey move takes; longer moves take longer
+    survey_max_joint_speed: 0.5  # [rad/s] on the joint that moves the most
+    survey_max_joint_distance: 6.3  # [rad] FAILED instead of moving further than this
 
     # Real panel outline (door_panel.xacro); PnP object frame is the centre of
     # the top face, x along the length, y along the width, z = 0 on the face.

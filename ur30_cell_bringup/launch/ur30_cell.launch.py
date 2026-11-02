@@ -344,7 +344,7 @@ def generate_launch_description():
     declared_arguments.append(
         DeclareLaunchArgument(
             "bridge_depth",
-            default_value="true",
+            default_value="false",
             description="Bridge the depth image and point cloud to ROS. They are the heaviest "
             "topics and CPU-hungry; the IBVS pipeline does not need them.",
         )

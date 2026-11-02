@@ -53,7 +53,8 @@ def generate_launch_description():
             PathJoinSubstitution(
                 [FindPackageShare("ur30_cell_moveit_config"), "launch", "ur30_cell_servo.launch.py"]
             )
-        )
+        ),
+        launch_arguments={"use_sim_time": "true"}.items(),
     )
 
     # ur30_cell_bringup only loads joint_state_broadcaster and
@@ -113,7 +114,7 @@ def generate_launch_description():
     )
 
     part_shifter = Node(
-        package="ur30_ibvs",
+        package="ur30_cell_bringup",
         executable="part_shifter.py",
         name="part_shifter",
         output="screen",
@@ -127,7 +128,7 @@ def generate_launch_description():
     )
 
     test_runner = Node(
-        package="ur30_ibvs",
+        package="ur30_cell_bringup",
         executable="ibvs_test_runner.py",
         name="ibvs_test_runner",
         output="screen",
