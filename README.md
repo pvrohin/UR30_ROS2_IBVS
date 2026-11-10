@@ -24,18 +24,13 @@ part is nudged at random. See [Visual servoing](#visual-servoing).
 
 | Path | What it is |
 |---|---|
-| `ur30_cell_description/` | The cell's xacro: pedestal, table, door panel, camera mount, and `ur30_cell.xacro` that assembles them. |
-| `ur30_cell_bringup/` | Launch file, RViz config, Gazebo world and camera bridge config. |
+| `ur30_cell_description/` | The cell's xacro: pedestal, table, door panel, camera mount. `ur30_cell_common.xacro` holds what simulation and the real robot share; `ur30_cell.xacro` is the Gazebo model and `ur30_cell_real.urdf.xacro` the real one. |
+| `ur30_cell_bringup/` | Simulation: launch files (cell, IBVS demo), RViz config, Gazebo world, camera bridge config, and the Gazebo-only test runner and part shifter. |
 | `ur30_cell_moveit_config/` | MoveIt Servo setup (SRDF, kinematics, joint limits, Servo parameters, launch) used to send Cartesian twists to the arm. No `move_group`. |
-| `ur30_ibvs/` | The IBVS package: panel detector, edge tracker, controller, state machine, dispense lap, part shifter and tests. Has its own [README](ur30_ibvs/README.md). |
-| `ur_description_gz/` | Vendored `Universal_Robots_ROS2_Description` (ROS package name `ur_description`). |
-| `ur_simulation_gz/` | Vendored `Universal_Robots_ROS2_GZ_Simulation`. |
-| `orbbec_description/` | Vendored `orbbec_description` from `OrbbecSDK_ROS2` (URDF and meshes only). |
-
-The three vendored directories are recorded in this repository as git links
-(gitlinks) **without a `.gitmodules` file**, so `git clone` leaves them empty and
-`git submodule update --init` does nothing. You have to fetch them yourself, see
-the next section.
+| `ur30_ibvs/` | The IBVS package: panel detector, edge tracker, controller, state machine, dispense lap and tests. No simulator dependency. Has its own [README](ur30_ibvs/README.md). |
+| `ur30_real_bringup/` | The real cell: UR driver, MoveIt Servo and Orbbec camera launch files, and configuration templates. |
+| `docker/`, `.github/workflows/` | The robot image, the Jetson's compose files and host scripts, CI and release. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). |
+| `ur30.repos` | Source dependencies of the simulation, fetched with `vcs` (next section). |
 
 ## Setup
 
@@ -49,28 +44,15 @@ git clone https://github.com/pvrohin/UR30_ROS2_IBVS.git src
 cd src
 ```
 
-### 2. Fetch the three vendored repositories
+### 2. Fetch the simulation's source dependencies
 
-These are the exact revisions the cell was built and tested against.
+The UR description and Gazebo simulation, at the revisions the cell was tested against
+(`ur30.repos`). They are ignored by git. `orbbec_description` comes from apt in the next step.
 
 ```bash
-# UR robot description (branch jazzy)
-git clone --branch jazzy https://github.com/UniversalRobots/Universal_Robots_ROS2_Description.git ur_description_gz
-git -C ur_description_gz checkout 3924298
-
-# UR Gazebo simulation (branch ros2)
-git clone --branch ros2 https://github.com/UniversalRobots/Universal_Robots_ROS2_GZ_Simulation.git ur_simulation_gz
-git -C ur_simulation_gz checkout 5f0161a
-
-# Orbbec description only (sparse checkout, the full repo is large)
-git clone --filter=blob:none --no-checkout --branch v2-main https://github.com/orbbec/OrbbecSDK_ROS2.git orbbec_description
-git -C orbbec_description sparse-checkout init --cone
-git -C orbbec_description sparse-checkout set orbbec_description
-git -C orbbec_description checkout 8e7cad2
+sudo apt install python3-vcstool
+vcs import . < ur30.repos
 ```
-
-Check: `ls orbbec_description/orbbec_description` should show `launch`, `meshes`,
-`package.xml` and so on. `git status` in `src/` should stay clean.
 
 ### 3. Install dependencies
 
@@ -81,7 +63,7 @@ sudo apt install \
   ros-jazzy-ros2-control ros-jazzy-ros2-controllers \
   ros-jazzy-joint-state-broadcaster ros-jazzy-joint-trajectory-controller \
   ros-jazzy-robot-state-publisher ros-jazzy-xacro ros-jazzy-rviz2 \
-  ros-jazzy-moveit-servo ros-jazzy-visp
+  ros-jazzy-moveit-servo ros-jazzy-visp ros-jazzy-orbbec-description
 cd ~/ur_ws_ah
 source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths src --ignore-src -r -y   # picks up anything missing
@@ -91,10 +73,12 @@ rosdep install --from-paths src --ignore-src -r -y   # picks up anything missing
 
 ```bash
 cd ~/ur_ws_ah
-colcon build --symlink-install --allow-overriding ur_description
+colcon build --symlink-install --allow-overriding ur_description \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
 ```
 
+Build in Release: without it the vision code is compiled unoptimised.
 `--allow-overriding ur_description` is needed because a system-installed
 `ros-jazzy-ur-description` may exist next to the vendored copy, which has the
 same package name. The workspace copy must win.
@@ -124,9 +108,10 @@ To run only the cell without the vision packages, build with `--packages-up-to u
 
 - Depth and point cloud are not bridged by default (they cost a lot of CPU at 30 Hz and the
   IBVS pipeline does not use them). Pass `bridge_depth:=true` to `ur30_cell.launch.py` to enable them.
-- The vendored repositories are not set up as real submodules (see above).
-- Only verified in headless Gazebo. The Gazebo and RViz GUIs were only partly exercised, and real
-  hardware has **not** been tested.
+- Only verified in headless Gazebo. The Gazebo and RViz GUIs were only partly exercised.
+- Real hardware has **not** been tested. The real-robot launch files have been run with
+  ros2_control's mock hardware only; see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for what is
+  still open before IBVS may move a real arm.
 
 ## Visual servoing
 
@@ -144,23 +129,26 @@ To run only the cell without the vision packages, build with `--packages-up-to u
   velocities for `forward_velocity_controller`.
 
 ```bash
-colcon build --symlink-install --allow-overriding ur_description
-source install/setup.bash
-
 # hold 0.2 m above the +y edge of the panel
-ros2 launch ur30_ibvs ur30_ibvs.launch.py
+ros2 launch ur30_cell_bringup ur30_ibvs_sim.launch.py
 
 # dispense lap with random part nudges
-ros2 launch ur30_ibvs ur30_ibvs.launch.py demo:=true
+ros2 launch ur30_cell_bringup ur30_ibvs_sim.launch.py demo:=true
 
 # clean lap, no nudges
-ros2 launch ur30_ibvs ur30_ibvs.launch.py demo:=true shifts:=false
+ros2 launch ur30_cell_bringup ur30_ibvs_sim.launch.py demo:=true shifts:=false
 
 # headless
-ros2 launch ur30_ibvs ur30_ibvs.launch.py demo:=true gazebo_gui:=false launch_rviz:=false
+ros2 launch ur30_cell_bringup ur30_ibvs_sim.launch.py demo:=true gazebo_gui:=false launch_rviz:=false
 ```
 
-Tests: `colcon test --packages-select ur30_ibvs` (92 tests).
+Tests: `colcon test --packages-select ur30_ibvs ur30_cell_bringup` (104 tests).
+
+## Real robot
+
+The same IBVS node runs on the real UR30 and Gemini 335Lg from a container on a Jetson AGX
+Orin. Setup, deployment, and what must be done before the arm may move under IBVS:
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 Status: in headless Gazebo the panel is found at its true pose, the camera settles within about
 1 mm of the target when holding, and the dispense lap closes with a settled boundary error of

@@ -10,7 +10,7 @@ The camera is taken once round the whole boundary of the panel (a stand-in for d
 along the part), while the panel is nudged at random. IBVS keeps the camera on the edge.
 
 ```bash
-ros2 launch ur30_ibvs ur30_ibvs.launch.py demo:=true
+ros2 launch ur30_cell_bringup ur30_ibvs_sim.launch.py demo:=true
 # options: shifts:=false (clean lap, panel never moves), shift_seed:=<n> (repeat a run),
 #          gazebo_gui:=false launch_rviz:=false (headless)
 ```
@@ -29,7 +29,7 @@ What happens:
 4. The corner is found in that image (`corner_finder.hpp`: where the dark part ends in a
    strip just inside the tracked edge). When it is at the image centre the next side
    starts, the tracker is re-seeded on it.
-5. `part_shifter.py` waits for `DISPENSE`, then every 4-8 s moves the panel (a separate
+5. `part_shifter.py` (in `ur30_cell_bringup`) waits for `DISPENSE`, then every 4-8 s moves the panel (a separate
    Gazebo model) to a random pose within 2 cm and 2 degrees of where it started, over 1 s.
    It scores the distance of the point under the camera's optical axis from the panel's
    true boundary, and logs a PASS/FAIL line at the end (`results_file:=` writes JSON).
@@ -74,6 +74,6 @@ The edge was lost and re-acquired on the larger nudges (4 cm between consecutive
 ## Tests
 
 ```bash
-colcon test --packages-select ur30_ibvs   # gtest + pytest, no simulator needed
-ros2 launch ur30_ibvs ur30_ibvs.launch.py test_cases:=3   # random-pose hold test in Gazebo
+colcon test --packages-select ur30_ibvs   # gtest, no simulator needed
+ros2 launch ur30_cell_bringup ur30_ibvs_sim.launch.py test_cases:=3   # random-pose hold test in Gazebo
 ```

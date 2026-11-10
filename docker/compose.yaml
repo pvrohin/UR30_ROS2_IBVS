@@ -1,0 +1,59 @@
+# The real cell on the robot computer (Jetson). Run from this directory:
+#   cp .env.example .env    # then edit it
+#   docker compose pull && docker compose up -d camera robot
+#   docker compose up ibvs  # in the foreground, with a person at the E-stop
+#
+# Three containers from one image: separate logs, and the IBVS node can be restarted without
+# touching the driver. Per-robot files (calibration, site parameters) live on the host in
+# /etc/ur30, never in the image. See docs/DEPLOYMENT.md.
+
+x-ros: &ros
+  image: ghcr.io/pvrohin/ur30_ibvs:${IMAGE_TAG:?set IMAGE_TAG in .env}
+  # DDS discovery between containers, and the robot's connections back to the driver.
+  network_mode: host
+  # DDS shared-memory transport between containers.
+  ipc: host
+  environment:
+    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-30}
+  logging:
+    driver: json-file
+    options: { max-size: "50m", max-file: "5" }
+
+services:
+  camera:
+    <<: *ros
+    restart: unless-stopped
+    # USB devices (major number 189), including after the camera is replugged.
+    device_cgroup_rules: ["c 189:* rmw"]
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+      - /run/udev:/run/udev:ro
+      - /var/lib/ur30:/var/lib/ur30
+    command: ros2 launch ur30_real_bringup camera.launch.py
+
+  robot:  # UR driver, controllers, robot_state_publisher, MoveIt Servo
+    <<: *ros
+    restart: unless-stopped
+    # Real-time scheduling for the control loop.
+    cap_add: [SYS_NICE]
+    ulimits:
+      rtprio: 99
+      memlock: -1
+    volumes:
+      - /etc/ur30:/etc/ur30:ro
+      - /var/lib/ur30:/var/lib/ur30
+    command: >
+      ros2 launch ur30_real_bringup robot.launch.py
+      robot_ip:=${ROBOT_IP:?set ROBOT_IP in .env}
+      kinematics_params:=${KINEMATICS_FILE:?set KINEMATICS_FILE in .env}
+      camera_mount_params:=/etc/ur30/camera_mount.yaml
+
+  ibvs:
+    <<: *ros
+    # Never restart motion code automatically. The node also waits for a call to
+    # /ibvs_state_machine/start, and refuses until site_configured is true.
+    restart: "no"
+    volumes:
+      - /etc/ur30:/etc/ur30:ro
+      - /var/lib/ur30:/var/lib/ur30
+    command: ros2 launch ur30_ibvs ibvs_node.launch.py params_file:=/etc/ur30/ibvs_site.yaml
