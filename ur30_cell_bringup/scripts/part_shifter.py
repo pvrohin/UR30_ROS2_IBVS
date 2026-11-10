@@ -12,7 +12,7 @@ still for settle_sec, stayed within tol_position. The error during a nudge is re
 too (it is larger: the arm lags the part) but is not what is judged.
 
 The node needs the cell launched with include_panel:=false and the IBVS node with
-dispense_enabled:=true; ur30_ibvs.launch.py does both when demo:=true.
+dispense_enabled:=true; ur30_ibvs_sim.launch.py does both when demo:=true.
 """
 import json
 import math

@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<!-- The parts of the cell that are the same in simulation and on the real robot. Put the
+     real bracket, pedestal, table and applicator here. Not a macro: it is included by
+     ur30_cell.xacro (Gazebo) and ur30_cell_real.urdf.xacro (hardware), which declare the
+     xacro args and set the properties ur_force_abs_paths, camera_mount_xyz and
+     camera_mount_rpy first. Nothing specific to a simulator or a driver belongs here. -->
+<robot xmlns:xacro="http://wiki.ros.org/xacro">
+  <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
+  <xacro:include filename="$(find ur30_cell_description)/urdf/pedestal.xacro"/>
+  <xacro:include filename="$(find ur30_cell_description)/urdf/table.xacro"/>
+  <xacro:include filename="$(find ur30_cell_description)/urdf/camera_mount.xacro"/>
+
+  <link name="world"/>
+
+  <!-- Pedestal at the world origin; the UR30 base mounts on its top frame. -->
+  <xacro:pedestal parent="world" name="pedestal" height="0.5" radius="0.15">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:pedestal>
+
+  <xacro:ur_robot
+    name="$(arg name)"
+    tf_prefix="$(arg tf_prefix)"
+    parent="pedestal_top_link"
+    joint_limits_parameters_file="$(arg joint_limit_params)"
+    kinematics_parameters_file="$(arg kinematics_params)"
+    physical_parameters_file="$(arg physical_params)"
+    visual_parameters_file="$(arg visual_params)"
+    safety_limits="$(arg safety_limits)"
+    safety_pos_margin="$(arg safety_pos_margin)"
+    safety_k_position="$(arg safety_k_position)"
+    force_abs_paths="${ur_force_abs_paths}">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:ur_robot>
+
+  <!-- Table in front of the pedestal, within UR30's reach. -->
+  <xacro:workcell_table parent="world" name="table" length="1.2" width="1.2" top_height="0.75">
+    <origin xyz="0.9 0 0.75" rpy="0 0 0"/>
+  </xacro:workcell_table>
+
+  <!-- Eye-in-hand Orbbec Gemini 335Lg on the UR30 flange. -->
+  <xacro:eye_in_hand_camera
+    parent="$(arg tf_prefix)tool0"
+    mount_xyz="${camera_mount_xyz}"
+    mount_rpy="${camera_mount_rpy}"/>
+</robot>

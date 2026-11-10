@@ -1,0 +1,13 @@
+# Simulation-only source dependencies, at the revisions the cell was tested against.
+#   cd src && vcs import . < ur30.repos
+# orbbec_description is not listed: it comes from apt (ros-jazzy-orbbec-description, through
+# rosdep), because vcs cannot do the sparse checkout that would leave out the camera driver.
+repositories:
+  ur_description_gz:
+    type: git
+    url: https://github.com/UniversalRobots/Universal_Robots_ROS2_Description.git
+    version: 39242984dc8d1fff9584c922c17c69c58df3591d
+  ur_simulation_gz:
+    type: git
+    url: https://github.com/UniversalRobots/Universal_Robots_ROS2_GZ_Simulation.git
+    version: 5f0161afa398693215c8546222aa4afebd1116a2

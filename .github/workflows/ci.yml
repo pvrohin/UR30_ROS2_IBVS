@@ -1,0 +1,62 @@
+# Checks every pull request and every push to main, in clean environments, so that
+# "works on my laptop" has to also mean "works from a fresh clone".
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The robot image: builds the hardware packages and runs their tests, exactly as the
+  # release does, but for x86 and without publishing anything.
+  robot-image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build and test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Everything, simulation included, built the way the README tells a new user to.
+  simulation:
+    runs-on: ubuntu-24.04
+    container: ros:jazzy
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ws/src
+      - name: Fetch source dependencies
+        run: |
+          apt-get update
+          # override-check provides --allow-overriding; ros:jazzy omits it (only "recommended")
+          apt-get install -y python3-vcstool python3-colcon-override-check
+          cd ws/src && vcs import . < ur30.repos
+      - name: Install dependencies
+        run: |
+          rosdep update --rosdistro jazzy
+          rosdep install --from-paths ws/src --ignore-src -y --rosdistro jazzy
+      - name: Build
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          cd ws
+          colcon build --allow-overriding ur_description --cmake-args -DCMAKE_BUILD_TYPE=Release
+      - name: Test
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          cd ws
+          colcon test --packages-select ur30_cell_description ur30_cell_moveit_config ur30_ibvs ur30_real_bringup ur30_cell_bringup
+          colcon test-result --verbose

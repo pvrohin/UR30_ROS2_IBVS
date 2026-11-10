@@ -11,6 +11,8 @@ find_package(rclcpp_action REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(trajectory_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(controller_manager_msgs REQUIRED)
@@ -29,7 +31,9 @@ add_library(ur30_ibvs_core
   src/panel_geometry.cpp
   src/servo_supervisor.cpp
   src/corner_finder.cpp
-  src/virtual_view.cpp)
+  src/virtual_view.cpp
+  src/survey_motion.cpp
+  src/timing_stats.cpp)
 target_include_directories(ur30_ibvs_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
@@ -55,9 +59,10 @@ if(BUILD_TESTING)
   target_link_libraries(test_virtual_view ur30_ibvs_core)
   ament_add_gtest(test_corner_finder test/test_corner_finder.cpp)
   target_link_libraries(test_corner_finder ur30_ibvs_core)
-  find_package(ament_cmake_pytest REQUIRED)
-  ament_add_pytest_test(test_ibvs_test_runner test/test_ibvs_test_runner.py)
-  ament_add_pytest_test(test_part_shifter test/test_part_shifter.py)
+  ament_add_gtest(test_survey_motion test/test_survey_motion.cpp)
+  target_link_libraries(test_survey_motion ur30_ibvs_core)
+  ament_add_gtest(test_timing_stats test/test_timing_stats.cpp)
+  target_link_libraries(test_timing_stats ur30_ibvs_core)
 endif()
 
 add_executable(ibvs_node src/ibvs_node_main.cpp src/ibvs_state_machine.cpp)
@@ -69,6 +74,7 @@ ament_target_dependencies(ibvs_node
   sensor_msgs
   geometry_msgs
   std_msgs
+  trajectory_msgs
   std_srvs
   control_msgs
   controller_manager_msgs
@@ -76,8 +82,6 @@ ament_target_dependencies(ibvs_node
   tf2_ros)
 
 install(TARGETS ibvs_node DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS scripts/ibvs_test_runner.py scripts/part_shifter.py
-  DESTINATION lib/${PROJECT_NAME})
 
 install(
   DIRECTORY config launch

@@ -1,0 +1,38 @@
+# TEMPLATE for the real cell, loaded over ur30_ibvs/config/ur30_ibvs.yaml. Copy it to
+# /etc/ur30/ibvs_site.yaml on the robot computer, measure the values marked MEASURE, and only
+# then set site_configured: true. Until then the node refuses to move the arm.
+ibvs_state_machine:
+  ros__parameters:
+    site_configured: false
+
+    # A person starts each cycle: ros2 service call /ibvs_state_machine/start std_srvs/srv/Trigger
+    auto_start: false
+
+    # The driver's trajectory controller, which follows the pendant's speed slider.
+    jtc_action: /scaled_joint_trajectory_controller/follow_joint_trajectory
+    position_controller: scaled_joint_trajectory_controller
+
+    # The node fails, and refuses to start, while the External Control program is not running.
+    robot_program_topic: /io_and_status_controller/robot_program_running
+
+    # MEASURE: teach this pose on the pendant. The value inherited from ur30_ibvs.yaml is
+    # for the simulated cell.
+    # survey_joint_positions: [...]
+    # Slow, and refuse to run from far away. Start near the survey pose with the pendant.
+    survey_duration_sec: 30.0
+    survey_max_joint_speed: 0.2  # [rad/s]
+    survey_max_joint_distance: 1.0  # [rad]
+
+    # MEASURE: the real part, in the world frame of the URDF.
+    # panel_length: 0.9
+    # panel_width: 0.55
+    # panel_top_height: 0.805
+
+    # MEASURE: tune on recorded frames from the real camera. See docs/DEPLOYMENT.md, section 4.
+    # dark_threshold: 150
+
+    # Conservative speeds for the first runs on the arm.
+    approach_max_speed: 0.02  # [m/s]
+    approach_max_rot_speed: 0.05  # [rad/s]
+    standoff_max_speed: 0.01  # [m/s]
+    dispense_speed: 0.01  # [m/s]

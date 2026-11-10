@@ -17,39 +17,15 @@
        movable model (see door_panel_model.xacro). -->
   <xacro:arg name="include_panel" default="true"/>
 
-  <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
   <xacro:include filename="$(find ur_simulation_gz)/urdf/ur_gz.ros2_control.xacro"/>
-  <xacro:include filename="$(find ur30_cell_description)/urdf/pedestal.xacro"/>
-  <xacro:include filename="$(find ur30_cell_description)/urdf/table.xacro"/>
   <xacro:include filename="$(find ur30_cell_description)/urdf/door_panel.xacro"/>
-  <xacro:include filename="$(find ur30_cell_description)/urdf/camera_mount.xacro"/>
+  <xacro:include filename="$(find ur30_cell_description)/urdf/camera_gz_sensor.xacro"/>
 
-  <link name="world"/>
-
-  <!-- Pedestal at the world origin; the UR30 base mounts on its top frame. -->
-  <xacro:pedestal parent="world" name="pedestal" height="0.5" radius="0.15">
-    <origin xyz="0 0 0" rpy="0 0 0"/>
-  </xacro:pedestal>
-
-  <xacro:ur_robot
-    name="$(arg name)"
-    tf_prefix="$(arg tf_prefix)"
-    parent="pedestal_top_link"
-    joint_limits_parameters_file="$(arg joint_limit_params)"
-    kinematics_parameters_file="$(arg kinematics_params)"
-    physical_parameters_file="$(arg physical_params)"
-    visual_parameters_file="$(arg visual_params)"
-    safety_limits="$(arg safety_limits)"
-    safety_pos_margin="$(arg safety_pos_margin)"
-    safety_k_position="$(arg safety_k_position)"
-    force_abs_paths="true">
-    <origin xyz="0 0 0" rpy="0 0 0"/>
-  </xacro:ur_robot>
-
-  <!-- Table in front of the pedestal, within UR30's reach. -->
-  <xacro:workcell_table parent="world" name="table" length="1.2" width="1.2" top_height="0.75">
-    <origin xyz="0.9 0 0.75" rpy="0 0 0"/>
-  </xacro:workcell_table>
+  <!-- Values used by ur30_cell_common.xacro. Gazebo needs absolute mesh paths. -->
+  <xacro:property name="ur_force_abs_paths" value="true"/>
+  <xacro:property name="camera_mount_xyz" value="0 0 0.01"/>
+  <xacro:property name="camera_mount_rpy" value="0 -1.5708 0"/>
+  <xacro:include filename="$(find ur30_cell_description)/urdf/ur30_cell_common.xacro"/>
 
   <!-- Door panel fixtured on the table top, slightly toward the arm. -->
   <xacro:if value="$(arg include_panel)">
@@ -59,8 +35,7 @@
     </xacro:door_panel>
   </xacro:if>
 
-  <!-- Eye-in-hand Orbbec Gemini 335Lg on the UR30 flange. -->
-  <xacro:eye_in_hand_camera parent="$(arg tf_prefix)tool0" camera_topic="camera"/>
+  <xacro:eye_in_hand_camera_gz_sensor camera_topic="camera"/>
 
   <gazebo>
     <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">

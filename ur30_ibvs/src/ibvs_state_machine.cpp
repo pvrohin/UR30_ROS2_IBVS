@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <iterator>
 
 #include <cv_bridge/cv_bridge.hpp>
 #include <opencv2/imgproc.hpp>
@@ -29,7 +30,7 @@ std::string seconds(double s)
 template<typename... Args>
 std::string format(const char * fmt, Args... args)
 {
-  char text[160];
+  char text[200];
   std::snprintf(text, sizeof(text), fmt, args...);
   return text;
 }
@@ -111,7 +112,13 @@ IbvsStateMachine::Params IbvsStateMachine::loadParams()
   p.control_rate_hz = num("control_rate_hz", 50.0);
   p.stale_command_sec = num("stale_command_sec", 0.25);
   p.start_delay_sec = num("start_delay_sec", 5.0);
-  p.auto_start = declare_parameter<bool>("auto_start", true);
+  p.auto_start = declare_parameter<bool>("auto_start", false);
+  p.site_configured = declare_parameter<bool>("site_configured", true);
+  p.survey_limits.min_duration_sec = p.survey_duration_sec;
+  p.survey_limits.max_joint_speed = num("survey_max_joint_speed", 0.5);
+  p.survey_limits.max_joint_distance = num("survey_max_joint_distance", 6.3);
+  p.robot_program_topic = str("robot_program_topic", "");
+  p.joint_states_topic = str("joint_states_topic", "/joint_states");
 
   p.panel_length = num("panel_length", 0.9);
   p.panel_width = num("panel_width", 0.55);
@@ -189,6 +196,16 @@ IbvsStateMachine::IbvsStateMachine()
   image_sub_ = create_subscription<sensor_msgs::msg::Image>(
     params_.image_topic, rclcpp::SensorDataQoS(),
     [this](const sensor_msgs::msg::Image::ConstSharedPtr msg) {onImage(msg);});
+  joint_state_sub_ = create_subscription<sensor_msgs::msg::JointState>(
+    params_.joint_states_topic, rclcpp::SensorDataQoS(),
+    [this](const sensor_msgs::msg::JointState::ConstSharedPtr msg) {joint_state_ = msg;});
+  if (!params_.robot_program_topic.empty()) {
+    // Transient local, like the driver's publisher: the flag is latched, so a node started
+    // later still gets it. Until one arrives the state is unknown, and the arm does not start.
+    program_running_sub_ = create_subscription<std_msgs::msg::Bool>(
+      params_.robot_program_topic, rclcpp::QoS(1).reliable().transient_local(),
+      [this](const std_msgs::msg::Bool::ConstSharedPtr msg) {program_running_ = msg->data;});
+  }
   twist_pub_ = create_publisher<geometry_msgs::msg::TwistStamped>(params_.twist_topic, 10);
   state_pub_ = create_publisher<std_msgs::msg::String>("~/state", rclcpp::QoS(1).transient_local());
   debug_pub_ = create_publisher<sensor_msgs::msg::Image>("~/debug_image", 1);
@@ -228,6 +245,7 @@ void IbvsStateMachine::onImage(const sensor_msgs::msg::Image::ConstSharedPtr & m
     RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 5000, "cv_bridge: %s", e.what());
     return;
   }
+  const auto started = std::chrono::steady_clock::now();
   if (state_ == State::SEARCH) {
     handleSearch(image->image);
   } else if (state_ == State::DISPENSE) {
@@ -235,10 +253,69 @@ void IbvsStateMachine::onImage(const sensor_msgs::msg::Image::ConstSharedPtr & m
   } else {
     handleServo(image->image);
   }
+  logImageTiming(
+    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count());
+}
+
+void IbvsStateMachine::logImageTiming(double processing_ms)
+{
+  // Image processing shares a thread with the twist timer, and Servo drops twists older than
+  // 0.1 s, so frames approaching that long stall the arm. Wall time: this measures the computer.
+  image_timing_.add(processing_ms);
+  const auto wall_now = std::chrono::steady_clock::now();
+  if (wall_now - image_timing_reported_ < std::chrono::seconds(10)) {
+    return;
+  }
+  image_timing_reported_ = wall_now;
+  if (const auto s = image_timing_.takeSummary()) {
+    RCLCPP_INFO(
+      get_logger(), "image processing: %zu frames, mean %.1f ms, p99 %.1f ms, max %.1f ms",
+      s->count, s->mean, s->p99, s->max);
+  }
+}
+
+std::optional<std::vector<double>> IbvsStateMachine::currentJointPositions() const
+{
+  if (!joint_state_ || joint_state_->name.size() != joint_state_->position.size()) {
+    return std::nullopt;
+  }
+  std::vector<double> positions;
+  for (const auto & joint : params_.joint_names) {
+    const auto it = std::find(joint_state_->name.begin(), joint_state_->name.end(), joint);
+    if (it == joint_state_->name.end()) {
+      return std::nullopt;
+    }
+    positions.push_back(joint_state_->position[std::distance(joint_state_->name.begin(), it)]);
+  }
+  return positions;
+}
+
+bool IbvsStateMachine::robotProgramRunning() const
+{
+  return params_.robot_program_topic.empty() || program_running_.value_or(false);
+}
+
+std::optional<std::string> IbvsStateMachine::startRefusal() const
+{
+  if (!params_.site_configured) {
+    return "site_configured is false: measure the marked values in the parameter file first";
+  }
+  if (!robotProgramRunning()) {
+    return "the External Control program is not running on the robot";
+  }
+  return std::nullopt;
 }
 
 void IbvsStateMachine::onTimer()
 {
+  // With the program stopped the robot ignores commands, so the state machine must not carry
+  // on as if it were following them. Only while it is responsible for motion.
+  const bool in_motion_state = state_ != State::WAIT_READY && state_ != State::IDLE &&
+    state_ != State::DONE && state_ != State::FAILED;
+  if (in_motion_state && !robotProgramRunning()) {
+    fail("the External Control program stopped running on the robot");
+  }
+
   switch (state_) {
     case State::WAIT_READY:
       tickWaitReady();
@@ -294,6 +371,7 @@ void IbvsStateMachine::tickWaitReady()
     tool_T_cam_ = lookup(params_.command_frame, params_.camera_frame);
   }
   need(tool_T_cam_.has_value(), "TF command frame->camera");
+  need(currentJointPositions().has_value(), "joint states");
   need(jtc_client_->action_server_is_ready(), "trajectory action");
   need(switch_client_->service_is_ready(), "switch_controller service");
   need(servo_type_client_->service_is_ready(), "servo switch_command_type service");
@@ -310,7 +388,12 @@ void IbvsStateMachine::tickWaitReady()
   if ((now() - *ready_since_).seconds() < params_.start_delay_sec) {
     return;
   }
-  if (!params_.auto_start) {
+  // A refused automatic start also ends in IDLE: nothing moves without a further request.
+  const auto refusal = startRefusal();
+  if (!params_.auto_start || refusal) {
+    if (refusal) {
+      RCLCPP_WARN(get_logger(), "not starting: %s", refusal->c_str());
+    }
     RCLCPP_INFO(get_logger(), "ready; waiting for a call to %s", start_srv_->get_service_name());
     transitionTo(State::IDLE);
     return;
@@ -327,6 +410,12 @@ void IbvsStateMachine::onStart(
   {
     response->success = false;
     response->message = std::string("not accepted in state ") + toString(state_);
+    return;
+  }
+  if (const auto refusal = startRefusal()) {
+    RCLCPP_WARN(get_logger(), "start refused: %s", refusal->c_str());
+    response->success = false;
+    response->message = *refusal;
     return;
   }
   RCLCPP_INFO(get_logger(), "start requested in state %s", toString(state_));
@@ -366,12 +455,27 @@ void IbvsStateMachine::beginRestoreControl()
 
 void IbvsStateMachine::sendSurveyGoal()
 {
+  // There is no planning or collision check on this move, so it must not be a fast sweep
+  // from wherever the arm happens to be.
+  const auto current = currentJointPositions();
+  const auto duration = current ?
+    surveyDuration(*current, params_.survey_joint_positions, params_.survey_limits) :
+    std::nullopt;
+  if (!duration) {
+    fail(
+      format(
+        "refusing the survey move: the arm is more than %.2f rad from the survey pose, or its "
+        "joint positions are unknown. Move it closer with the pendant",
+        params_.survey_limits.max_joint_distance));
+    return;
+  }
+  RCLCPP_INFO(get_logger(), "moving to the survey pose in %.1f s", *duration);
   transitionTo(State::GO_TO_SURVEY);
   FollowJointTrajectory::Goal goal;
   goal.trajectory.joint_names = params_.joint_names;
   trajectory_msgs::msg::JointTrajectoryPoint point;
   point.positions = params_.survey_joint_positions;
-  point.time_from_start = rclcpp::Duration::from_seconds(params_.survey_duration_sec);
+  point.time_from_start = rclcpp::Duration::from_seconds(*duration);
   goal.trajectory.points.push_back(point);
 
   rclcpp_action::Client<FollowJointTrajectory>::SendGoalOptions options;

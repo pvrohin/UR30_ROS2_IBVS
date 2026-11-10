@@ -1,0 +1,9 @@
+# The build context is the repository root, but the image only needs these.
+*
+!docker/entrypoint.sh
+!ur30_cell_description
+!ur30_cell_moveit_config
+!ur30_ibvs
+!ur30_real_bringup
+**/__pycache__
+**/.pytest_cache

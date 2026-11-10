@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -15,6 +16,8 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
+#include <std_msgs/msg/bool.hpp>
 #include <std_srvs/srv/trigger.hpp>
 #include <std_msgs/msg/header.hpp>
 #include <std_msgs/msg/string.hpp>
@@ -27,6 +30,8 @@
 #include "ur30_ibvs/panel_detector.hpp"
 #include "ur30_ibvs/panel_geometry.hpp"
 #include "ur30_ibvs/servo_supervisor.hpp"
+#include "ur30_ibvs/survey_motion.hpp"
+#include "ur30_ibvs/timing_stats.hpp"
 #include "ur30_ibvs/virtual_view.hpp"
 
 namespace ur30_ibvs
@@ -75,6 +80,13 @@ private:
     double start_delay_sec;
     // false: after WAIT_READY go to IDLE and wait for ~/start (a test runner drives the cycles).
     bool auto_start;
+    // false: the values in the parameter file are not yet those of this cell, so the node
+    // refuses to move the arm (the real robot's template ships like this).
+    bool site_configured;
+    SurveyLimits survey_limits;
+    // Topic with the driver's "robot program running" flag; empty when there is none (simulation).
+    std::string robot_program_topic;
+    std::string joint_states_topic;
 
     double panel_length, panel_width, panel_top_height;
     PanelDetectorParams detector;
@@ -117,6 +129,12 @@ private:
     std::shared_ptr<std_srvs::srv::Trigger::Response> response);
   void beginRestoreControl();
   void sendSurveyGoal();
+  // Why the arm must not start moving now; empty if it may.
+  std::optional<std::string> startRefusal() const;
+  // Joint positions in the order of joint_names; empty until all are known.
+  std::optional<std::vector<double>> currentJointPositions() const;
+  bool robotProgramRunning() const;
+  void logImageTiming(double processing_ms);
   void handleSearch(const cv::Mat & bgr);
   void beginSwitchControl();
   void tickApproach();
@@ -164,6 +182,8 @@ private:
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr info_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr program_running_sub_;
   rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr twist_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr state_pub_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr debug_pub_;
@@ -174,6 +194,10 @@ private:
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr start_srv_;
 
   std::optional<cv::Matx33d> K_;
+  sensor_msgs::msg::JointState::ConstSharedPtr joint_state_;
+  std::optional<bool> program_running_;  // empty until the driver has reported it
+  TimingStats image_timing_;
+  std::chrono::steady_clock::time_point image_timing_reported_{std::chrono::steady_clock::now()};
   std::optional<cv::Matx44d> tool_T_cam_;  // fixed: the camera pose in the command frame
 
   // WAIT_READY: when every dependency first became available (reset if one drops out).

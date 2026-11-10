@@ -12,7 +12,7 @@ camera pose), not from anything the IBVS node reports about itself.
 
 The panel is a separate Gazebo model (door_panel_model.xacro) moved with the gz
 set_pose service, so the cell must be launched with include_panel:=false and the IBVS
-node with auto_start:=false; ur30_ibvs.launch.py does both when test_cases > 0.
+node with auto_start:=false; ur30_ibvs_sim.launch.py does both when test_cases > 0.
 """
 import json
 import math
