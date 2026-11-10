@@ -63,7 +63,8 @@ sudo apt install \
   ros-jazzy-ros2-control ros-jazzy-ros2-controllers \
   ros-jazzy-joint-state-broadcaster ros-jazzy-joint-trajectory-controller \
   ros-jazzy-robot-state-publisher ros-jazzy-xacro ros-jazzy-rviz2 \
-  ros-jazzy-moveit-servo ros-jazzy-visp ros-jazzy-orbbec-description
+  ros-jazzy-moveit-servo ros-jazzy-visp ros-jazzy-orbbec-description \
+  python3-colcon-override-check   # provides colcon's --allow-overriding
 cd ~/ur_ws_ah
 source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths src --ignore-src -r -y   # picks up anything missing
